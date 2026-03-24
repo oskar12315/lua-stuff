@@ -9,36 +9,36 @@ local Library = {}
 Library.__index = Library
 
 local Theme = {
-    CatBg = Color3.fromRGB(28, 28, 36),
-    CatBorder = Color3.fromRGB(48, 48, 60),
-    ModOn = Color3.fromRGB(230, 140, 180),
-    ModOff = Color3.fromRGB(185, 185, 195),
-    OptText = Color3.fromRGB(150, 150, 162),
-    OptVal = Color3.fromRGB(215, 215, 225),
-    Accent = Color3.fromRGB(230, 140, 180),
-    SlBg = Color3.fromRGB(42, 42, 52),
-    TgOn = Color3.fromRGB(230, 140, 180),
-    TgOff = Color3.fromRGB(55, 55, 68),
-    Knob = Color3.fromRGB(220, 220, 230),
-    DrBg = Color3.fromRGB(32, 32, 42),
-    DrHov = Color3.fromRGB(48, 48, 60),
-    DrBor = Color3.fromRGB(55, 55, 68),
-    BindTxt = Color3.fromRGB(120, 120, 135),
-    Sep = Color3.fromRGB(42, 42, 52),
-    PkBg = Color3.fromRGB(30, 30, 38),
-    SrBg = Color3.fromRGB(32, 32, 40),
-    SrBor = Color3.fromRGB(55, 55, 65),
-    SrTxt = Color3.fromRGB(180, 180, 190),
-    -- keybind widget colors (brighter)
-    KbwName = Color3.fromRGB(220, 220, 230),
-    KbwBind = Color3.fromRGB(170, 170, 185),
-    KbwHeader = Color3.fromRGB(230, 230, 240),
+    CatBg      = Color3.fromRGB(28, 28, 36),
+    CatBorder  = Color3.fromRGB(48, 48, 60),
+    ModOn      = Color3.fromRGB(230, 140, 180),
+    ModOff     = Color3.fromRGB(185, 185, 195),
+    OptText    = Color3.fromRGB(150, 150, 162),
+    OptVal     = Color3.fromRGB(215, 215, 225),
+    Accent     = Color3.fromRGB(230, 140, 180),
+    SlBg       = Color3.fromRGB(42, 42, 52),
+    TgOn       = Color3.fromRGB(230, 140, 180),
+    TgOff      = Color3.fromRGB(55, 55, 68),
+    Knob       = Color3.fromRGB(220, 220, 230),
+    DrBg       = Color3.fromRGB(32, 32, 42),
+    DrHov      = Color3.fromRGB(48, 48, 60),
+    DrBor      = Color3.fromRGB(55, 55, 68),
+    BindTxt    = Color3.fromRGB(120, 120, 135),
+    Sep        = Color3.fromRGB(42, 42, 52),
+    PkBg       = Color3.fromRGB(30, 30, 38),
+    SrBg       = Color3.fromRGB(32, 32, 40),
+    SrBor      = Color3.fromRGB(55, 55, 65),
+    SrTxt      = Color3.fromRGB(180, 180, 190),
+    -- FIX 2: keybind widget colours — much brighter
+    KbwName    = Color3.fromRGB(240, 240, 252),
+    KbwBind    = Color3.fromRGB(210, 200, 230),
+    KbwHeader  = Color3.fromRGB(255, 255, 255),
     -- loading
-    LoadBg = Color3.fromRGB(14, 14, 18),
-    LoadBar = Color3.fromRGB(230, 140, 180),
-    LoadBarBg = Color3.fromRGB(40, 40, 50),
-    LoadText = Color3.fromRGB(200, 200, 215),
-    LoadSub = Color3.fromRGB(130, 130, 145),
+    LoadBg     = Color3.fromRGB(14, 14, 18),
+    LoadBar    = Color3.fromRGB(230, 140, 180),
+    LoadBarBg  = Color3.fromRGB(40, 40, 50),
+    LoadText   = Color3.fromRGB(200, 200, 215),
+    LoadSub    = Color3.fromRGB(130, 130, 145),
 }
 
 local F = {
@@ -47,20 +47,32 @@ local F = {
     B = Enum.Font.GothamBold,
 }
 
-local CFG_DIR = "MCClientConfigs"
+local CFG_DIR  = "MCClientConfigs"
 local AUTO_CFG = "_autoload"
 
 local function Make(c, p)
     local i = Instance.new(c)
     if p then
         for k, v in pairs(p) do
-            if k ~= "Parent" then
-                pcall(function() i[k] = v end)
-            end
+            if k ~= "Parent" then pcall(function() i[k] = v end) end
         end
         if p.Parent then i.Parent = p.Parent end
     end
     return i
+end
+
+-- FIX 3: CanvasGroup enables smooth GroupTransparency tweening on entire layers.
+-- Silently falls back to a plain Frame if the engine build doesn't support it.
+local function MakeCG(p)
+    local ok, inst = pcall(function() return Instance.new("CanvasGroup") end)
+    if not ok then inst = Instance.new("Frame") end
+    if p then
+        for k, v in pairs(p) do
+            if k ~= "Parent" then pcall(function() inst[k] = v end) end
+        end
+        if p.Parent then inst.Parent = p.Parent end
+    end
+    return inst
 end
 
 local function Tw(i, d, p, s)
@@ -76,21 +88,21 @@ local function HSV(c)
     local d = mx - mn
     s = mx == 0 and 0 or d / mx
     if mx ~= mn then
-        if mx == r then h = (g - b) / d + (g < b and 6 or 0)
+        if     mx == r then h = (g - b) / d + (g < b and 6 or 0)
         elseif mx == g then h = (b - r) / d + 2
-        else h = (r - g) / d + 4 end
+        else              h = (r - g) / d + 4 end
         h = h / 6
     end
     return h, s, v
 end
 
-local function FW(p, c) pcall(function() if writefile then writefile(p, c) end end) end
-local function FR(p) local o, r = pcall(function() if readfile and isfile and isfile(p) then return readfile(p) end end); return o and r or nil end
-local function FD(p) pcall(function() if delfile and isfile and isfile(p) then delfile(p) end end) end
-local function FM(p) pcall(function() if makefolder and (not isfolder or not isfolder(p)) then makefolder(p) end end) end
-local function FL(p) local o, r = pcall(function() if listfiles and isfolder and isfolder(p) then return listfiles(p) end return {} end); return o and r or {} end
+local function FW(p, c) pcall(function() if writefile  then writefile(p, c) end end) end
+local function FR(p)    local o,r=pcall(function() if readfile and isfile and isfile(p) then return readfile(p) end end); return o and r or nil end
+local function FD(p)    pcall(function() if delfile   and isfile and isfile(p) then delfile(p) end end) end
+local function FM(p)    pcall(function() if makefolder and (not isfolder or not isfolder(p)) then makefolder(p) end end) end
+local function FL(p)    local o,r=pcall(function() if listfiles and isfolder and isfolder(p) then return listfiles(p) end return {} end); return o and r or {} end
 
--- centralized drag
+-- centralised drag
 local Drags = { sl = {}, sv = {}, hu = {}, ok = false }
 function Drags.Init(lib)
     if Drags.ok then return end
@@ -117,116 +129,69 @@ end
 -- ═══════════════════════════════════
 local function ShowLoading(gui, clientName, onDone)
     local loadFrame = Make("Frame", {
-        Parent = gui,
-        BackgroundColor3 = Theme.LoadBg,
-        Size = UDim2.new(1, 0, 1, 0),
-        ZIndex = 500,
+        Parent = gui, BackgroundColor3 = Theme.LoadBg,
+        Size = UDim2.new(1,0,1,0), ZIndex = 500,
     })
-
-    -- center container
     local center = Make("Frame", {
-        Parent = loadFrame,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0.5, 0, 0.5, 0),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Size = UDim2.new(0, 300, 0, 100),
-        ZIndex = 501,
+        Parent = loadFrame, BackgroundTransparency = 1,
+        Position = UDim2.new(0.5,0,0.5,0), AnchorPoint = Vector2.new(0.5,0.5),
+        Size = UDim2.new(0,300,0,100), ZIndex = 501,
     })
-
-    -- title
     local title = Make("TextLabel", {
-        Parent = center,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0.5, 0, 0, 0),
-        AnchorPoint = Vector2.new(0.5, 0),
-        Size = UDim2.new(1, 0, 0, 30),
-        Font = F.B,
-        Text = string.upper(clientName),
-        TextColor3 = Theme.Accent,
-        TextSize = 22,
-        ZIndex = 502,
+        Parent = center, BackgroundTransparency = 1,
+        Position = UDim2.new(0.5,0,0,0), AnchorPoint = Vector2.new(0.5,0),
+        Size = UDim2.new(1,0,0,30), Font = F.B,
+        Text = string.upper(clientName), TextColor3 = Theme.Accent, TextSize = 22, ZIndex = 502,
     })
-
-    -- subtitle
     local subtitle = Make("TextLabel", {
-        Parent = center,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0.5, 0, 0, 32),
-        AnchorPoint = Vector2.new(0.5, 0),
-        Size = UDim2.new(1, 0, 0, 18),
-        Font = F.R,
-        Text = "loading...",
-        TextColor3 = Theme.LoadSub,
-        TextSize = 12,
-        ZIndex = 502,
+        Parent = center, BackgroundTransparency = 1,
+        Position = UDim2.new(0.5,0,0,32), AnchorPoint = Vector2.new(0.5,0),
+        Size = UDim2.new(1,0,0,18), Font = F.R,
+        Text = "loading...", TextColor3 = Theme.LoadSub, TextSize = 12, ZIndex = 502,
     })
-
-    -- progress bar bg
     local barBg = Make("Frame", {
-        Parent = center,
-        BackgroundColor3 = Theme.LoadBarBg,
-        Position = UDim2.new(0.5, 0, 0, 60),
-        AnchorPoint = Vector2.new(0.5, 0),
-        Size = UDim2.new(0.8, 0, 0, 4),
-        ZIndex = 502,
+        Parent = center, BackgroundColor3 = Theme.LoadBarBg,
+        Position = UDim2.new(0.5,0,0,60), AnchorPoint = Vector2.new(0.5,0),
+        Size = UDim2.new(0.8,0,0,4), ZIndex = 502,
     })
-    Make("UICorner", { CornerRadius = UDim.new(1, 0), Parent = barBg })
-
-    -- progress bar fill
+    Make("UICorner", { CornerRadius = UDim.new(1,0), Parent = barBg })
     local barFill = Make("Frame", {
-        Parent = barBg,
-        BackgroundColor3 = Theme.LoadBar,
-        Size = UDim2.new(0, 0, 1, 0),
-        ZIndex = 503,
+        Parent = barBg, BackgroundColor3 = Theme.LoadBar,
+        Size = UDim2.new(0,0,1,0), ZIndex = 503,
     })
-    Make("UICorner", { CornerRadius = UDim.new(1, 0), Parent = barFill })
-
-    -- percent text
+    Make("UICorner", { CornerRadius = UDim.new(1,0), Parent = barFill })
     local pctText = Make("TextLabel", {
-        Parent = center,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0.5, 0, 0, 70),
-        AnchorPoint = Vector2.new(0.5, 0),
-        Size = UDim2.new(1, 0, 0, 16),
-        Font = F.R,
-        Text = "0%",
-        TextColor3 = Theme.LoadSub,
-        TextSize = 10,
-        ZIndex = 502,
+        Parent = center, BackgroundTransparency = 1,
+        Position = UDim2.new(0.5,0,0,70), AnchorPoint = Vector2.new(0.5,0),
+        Size = UDim2.new(1,0,0,16), Font = F.R,
+        Text = "0%", TextColor3 = Theme.LoadSub, TextSize = 10, ZIndex = 502,
     })
 
-    -- animate loading
     task.spawn(function()
         local stages = {
-            { pct = 0.15, text = "initializing modules..." },
-            { pct = 0.30, text = "loading categories..." },
-            { pct = 0.50, text = "setting up keybinds..." },
-            { pct = 0.65, text = "building ui elements..." },
-            { pct = 0.80, text = "loading config..." },
-            { pct = 0.92, text = "finalizing..." },
-            { pct = 1.00, text = "done!" },
+            { pct = 0.15, text = "initializing modules..."  },
+            { pct = 0.30, text = "loading categories..."    },
+            { pct = 0.50, text = "setting up keybinds..."   },
+            { pct = 0.65, text = "building ui elements..."  },
+            { pct = 0.80, text = "loading config..."        },
+            { pct = 0.92, text = "finalizing..."            },
+            { pct = 1.00, text = "done!"                    },
         }
-
         for _, stage in ipairs(stages) do
             subtitle.Text = stage.text
-            Tw(barFill, 0.3, { Size = UDim2.new(stage.pct, 0, 1, 0) }, Enum.EasingStyle.Quart)
+            Tw(barFill, 0.3, { Size = UDim2.new(stage.pct,0,1,0) }, Enum.EasingStyle.Quart)
             pctText.Text = math.floor(stage.pct * 100) .. "%"
-            task.wait(math.random(15, 35) / 100)
+            task.wait(math.random(15,35) / 100)
         end
-
         task.wait(0.3)
-
-        -- fade out loading
         Tw(loadFrame, 0.5, { BackgroundTransparency = 1 })
-        Tw(title, 0.3, { TextTransparency = 1 })
-        Tw(subtitle, 0.3, { TextTransparency = 1 })
-        Tw(barBg, 0.3, { BackgroundTransparency = 1 })
-        Tw(barFill, 0.3, { BackgroundTransparency = 1 })
-        Tw(pctText, 0.3, { TextTransparency = 1 })
-
+        Tw(title,     0.3, { TextTransparency = 1 })
+        Tw(subtitle,  0.3, { TextTransparency = 1 })
+        Tw(barBg,     0.3, { BackgroundTransparency = 1 })
+        Tw(barFill,   0.3, { BackgroundTransparency = 1 })
+        Tw(pctText,   0.3, { TextTransparency = 1 })
         task.wait(0.5)
         loadFrame:Destroy()
-
         if onDone then onDone() end
     end)
 
@@ -236,52 +201,53 @@ end
 -- ═══════════════════════════════════
 -- LIBRARY
 -- ═══════════════════════════════════
-function Library.new(name)
+
+-- FIX 1: Library.new now accepts an optional options table.
+--   e.g.  Library.new("MyClient", { toggleKey = Enum.KeyCode.RightShift })
+-- You can also call  lib:SetToggleKey(Enum.KeyCode.X)  at any time.
+function Library.new(name, opts)
     local self = setmetatable({}, Library)
-    self.name = name or "Client"
-    self.cats = {}
-    self.mods = {}
-    self.opts = {}
-    self.conn = {}
-    self.accTrk = {}
-    self.catHdrs = {}
+    self.name     = name or "Client"
+    self.cats     = {}
+    self.mods     = {}
+    self.opts     = {}
+    self.conn     = {}
+    self.accTrk   = {}
+    self.catHdrs  = {}
     self.kbListen = {}
-    self.vis = true
-    self.tKey = Enum.KeyCode.P -- DEFAULT P
-    self.dead = false
-    self.popup = nil
+    self.vis      = true
+    self.tKey     = (opts and opts.toggleKey) or Enum.KeyCode.P  -- FIX 1
+    self.dead     = false
+    self.popup    = nil
 
     local old = LP.PlayerGui:FindFirstChild("MCHUI")
     if old then old:Destroy() end
 
     self.gui = Make("ScreenGui", {
-    Name = "MCHUI",
-    Parent = LP:WaitForChild("PlayerGui"),
-    ZIndexBehavior = Enum.ZIndexBehavior.Global,
-    ResetOnSpawn = false,
-    DisplayOrder = 999,
-    IgnoreGuiInset = true,  -- ADD THIS LINE
+        Name = "MCHUI", Parent = LP:WaitForChild("PlayerGui"),
+        ZIndexBehavior = Enum.ZIndexBehavior.Global,
+        ResetOnSpawn = false, DisplayOrder = 999,
+        IgnoreGuiInset = true,
     })
 
-    -- content layer (hidden initially for loading)
-    self.cLayer = Make("Frame", {
+    -- FIX 3: CanvasGroup layers allow full-layer GroupTransparency tweening
+    self.cLayer = MakeCG({
         Parent = self.gui, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0), ZIndex = 1, Visible = false,
+        Size = UDim2.new(1,0,1,0), ZIndex = 1, Visible = false,
     })
-
-    self.sLayer = Make("Frame", {
+    self.sLayer = MakeCG({
         Parent = self.gui, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0), ZIndex = 50, Visible = false,
+        Size = UDim2.new(1,0,1,0), ZIndex = 50, Visible = false,
     })
 
     self.pLayer = Make("Frame", {
         Parent = self.gui, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0), ZIndex = 100,
+        Size = UDim2.new(1,0,1,0), ZIndex = 100,
     })
 
     self.away = Make("TextButton", {
         Parent = self.pLayer, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0), Text = "", ZIndex = 100, Visible = false,
+        Size = UDim2.new(1,0,1,0), Text = "", ZIndex = 100, Visible = false,
     })
     self.away.MouseButton1Click:Connect(function() self:CPop() end)
 
@@ -289,9 +255,9 @@ function Library.new(name)
 
     self.scroll = Make("ScrollingFrame", {
         Parent = self.cLayer, BackgroundTransparency = 1, BorderSizePixel = 0,
-        Position = UDim2.new(0.5, 0, 0, 52), AnchorPoint = Vector2.new(0.5, 0),
-        Size = UDim2.new(1, -20, 1, -60),
-        CanvasSize = UDim2.new(0, 0, 0, 0),
+        Position = UDim2.new(0.5,0,0,52), AnchorPoint = Vector2.new(0.5,0),
+        Size = UDim2.new(1,-20,1,-60),
+        CanvasSize = UDim2.new(0,0,0,0),
         AutomaticCanvasSize = Enum.AutomaticSize.X,
         ScrollBarThickness = 0, ScrollingDirection = Enum.ScrollingDirection.X,
         ClipsDescendants = false, ZIndex = 1,
@@ -303,36 +269,55 @@ function Library.new(name)
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
         VerticalAlignment = Enum.VerticalAlignment.Top,
         SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 10),
+        Padding = UDim.new(0,10),
     })
 
     self:MkKBW()
     Drags.Init(self)
 
-    -- show loading, then reveal UI
+    -- FIX 3: Loading complete → proper fade-in + gentle slide-up entrance
     ShowLoading(self.gui, self.name, function()
         self.cLayer.Visible = true
         self.sLayer.Visible = true
-        -- fade in
-        self.cLayer.GroupTransparency = 1
-        self.sLayer.GroupTransparency = 1
-        -- use CanvasGroup if available, otherwise just show
-        if self.cLayer:IsA("Frame") then
-            -- can't GroupTransparency on Frame, just show
-            self.cLayer.Visible = true
-            self.sLayer.Visible = true
-        end
+        pcall(function() self.cLayer.GroupTransparency = 1 end)
+        pcall(function() self.sLayer.GroupTransparency = 1 end)
+        self.scroll.Position = UDim2.new(0.5, 0, 0, 66)
+        Tw(self.cLayer, 0.45, { GroupTransparency = 0 }, Enum.EasingStyle.Quart)
+        Tw(self.sLayer, 0.45, { GroupTransparency = 0 }, Enum.EasingStyle.Quart)
+        Tw(self.scroll, 0.45, { Position = UDim2.new(0.5,0,0,52) }, Enum.EasingStyle.Quart)
     end)
 
-    -- toggle with P
+    -- ── FIX 3: Animated toggle (open = slide down + fade in, close = float up + fade out) ──
     table.insert(self.conn, UserInputService.InputBegan:Connect(function(inp, gpe)
         if gpe or self.dead then return end
         if inp.KeyCode == self.tKey then
             self.vis = not self.vis
-            self.cLayer.Visible = self.vis
-            self.searchFrame.Visible = self.vis
-            self.searchDrop.Visible = false
-            if not self.vis then self:CPop() end
+            if self.vis then
+                -- Open
+                self.cLayer.Visible = true
+                self.sLayer.Visible = true
+                pcall(function() self.cLayer.GroupTransparency = 1 end)
+                pcall(function() self.sLayer.GroupTransparency = 1 end)
+                self.scroll.Position = UDim2.new(0.5, 0, 0, 66)
+                Tw(self.cLayer, 0.30, { GroupTransparency = 0 }, Enum.EasingStyle.Quart)
+                Tw(self.sLayer, 0.30, { GroupTransparency = 0 }, Enum.EasingStyle.Quart)
+                Tw(self.scroll, 0.30, { Position = UDim2.new(0.5,0,0,52) }, Enum.EasingStyle.Quart)
+            else
+                -- Close: float upward and fade out
+                self.searchDrop.Visible = false
+                self:CPop()
+                Tw(self.cLayer, 0.25, { GroupTransparency = 1 }, Enum.EasingStyle.Quart)
+                Tw(self.sLayer, 0.25, { GroupTransparency = 1 }, Enum.EasingStyle.Quart)
+                Tw(self.scroll, 0.25, { Position = UDim2.new(0.5,0,0,38) }, Enum.EasingStyle.Quart)
+                task.delay(0.27, function()
+                    if not self.vis then
+                        self.cLayer.Visible = false
+                        self.sLayer.Visible = false
+                        -- Reset scroll position ready for next open
+                        self.scroll.Position = UDim2.new(0.5,0,0,66)
+                    end
+                end)
+            end
         end
     end))
 
@@ -340,28 +325,18 @@ function Library.new(name)
     table.insert(self.conn, UserInputService.InputBegan:Connect(function(inp, gpe)
         if gpe or self.dead then return end
         if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
-
-        -- check listeners first
         for _, kl in ipairs(self.kbListen) do
             if kl.on then
-                if inp.KeyCode == Enum.KeyCode.Escape then
-                    kl.set(Enum.KeyCode.Unknown)
-                else
-                    kl.set(inp.KeyCode)
-                end
+                if inp.KeyCode == Enum.KeyCode.Escape then kl.set(Enum.KeyCode.Unknown)
+                else kl.set(inp.KeyCode) end
                 kl.on = false
-                return -- consumed by listener, don't process as module bind
+                return
             end
         end
-
-        -- process module binds
         for _, m in ipairs(self.mods) do
             if m.bk and m.bk ~= Enum.KeyCode.Unknown and m.bk == inp.KeyCode then
-                if m.bm == "toggle" then
-                    m:SetOn(not m.on)
-                elseif m.bm == "hold" then
-                    m:SetOn(true)
-                end
+                if m.bm == "toggle"    then m:SetOn(not m.on)
+                elseif m.bm == "hold"  then m:SetOn(true) end
             end
         end
     end))
@@ -370,9 +345,7 @@ function Library.new(name)
         if self.dead then return end
         if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
         for _, m in ipairs(self.mods) do
-            if m.bk and m.bk == inp.KeyCode and m.bm == "hold" then
-                m:SetOn(false)
-            end
+            if m.bk and m.bk == inp.KeyCode and m.bm == "hold" then m:SetOn(false) end
         end
     end))
 
@@ -383,9 +356,9 @@ function Library.new(name)
             if not cat.collapsed then
                 local h = cat.mlLayout.AbsoluteContentSize.Y
                 if math.abs(h - cat.lastH) > 0.5 then
-                    cat.lastH = h
-                    cat.ml.Size = UDim2.new(1, -24, 0, h)
-                    cat.frame.Size = UDim2.new(0, 200, 0, 44 + h)
+                    cat.lastH     = h
+                    cat.ml.Size    = UDim2.new(1,-24,0,h)
+                    cat.frame.Size = UDim2.new(0,200,0,44+h)
                 end
             end
         end
@@ -399,26 +372,31 @@ function Library.new(name)
     return self
 end
 
+-- FIX 1: change the toggle key at any time after construction
+function Library:SetToggleKey(key)
+    self.tKey = key
+end
+
 -- search
 function Library:MkSearch()
     self.searchFrame = Make("Frame", {
         Parent = self.sLayer, BackgroundColor3 = Theme.SrBg, BorderSizePixel = 0,
-        Position = UDim2.new(0.5, 0, 0, 12), AnchorPoint = Vector2.new(0.5, 0),
-        Size = UDim2.new(0, 280, 0, 30), ZIndex = 50,
+        Position = UDim2.new(0.5,0,0,12), AnchorPoint = Vector2.new(0.5,0),
+        Size = UDim2.new(0,280,0,30), ZIndex = 50,
     })
-    Make("UICorner", { CornerRadius = UDim.new(0, 6), Parent = self.searchFrame })
+    Make("UICorner", { CornerRadius = UDim.new(0,6), Parent = self.searchFrame })
     Make("UIStroke", { Color = Theme.SrBor, Thickness = 1, Transparency = 0.3, Parent = self.searchFrame })
 
     Make("ImageLabel", {
         Parent = self.searchFrame, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 8, 0.5, -9), Size = UDim2.new(0, 18, 0, 18),
+        Position = UDim2.new(0,8,0.5,-9), Size = UDim2.new(0,18,0,18),
         Image = "rbxassetid://132302594577680", ImageColor3 = Theme.BindTxt,
         ZIndex = 51, ScaleType = Enum.ScaleType.Fit,
     })
 
     self.searchBox = Make("TextBox", {
         Parent = self.searchFrame, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 32, 0, 0), Size = UDim2.new(1, -40, 1, 0),
+        Position = UDim2.new(0,32,0,0), Size = UDim2.new(1,-40,1,0),
         Font = F.R, Text = "", PlaceholderText = "search...",
         PlaceholderColor3 = Theme.BindTxt, TextColor3 = Theme.SrTxt,
         TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left,
@@ -427,20 +405,20 @@ function Library:MkSearch()
 
     self.searchDrop = Make("Frame", {
         Parent = self.sLayer, BackgroundColor3 = Theme.DrBg, BorderSizePixel = 0,
-        Position = UDim2.new(0.5, -140, 0, 46), Size = UDim2.new(0, 280, 0, 0),
+        Position = UDim2.new(0.5,-140,0,46), Size = UDim2.new(0,280,0,0),
         ClipsDescendants = true, Visible = false, ZIndex = 55,
     })
-    Make("UICorner", { CornerRadius = UDim.new(0, 5), Parent = self.searchDrop })
+    Make("UICorner", { CornerRadius = UDim.new(0,5), Parent = self.searchDrop })
     Make("UIStroke", { Color = Theme.DrBor, Thickness = 1, Parent = self.searchDrop })
     self.sdLayout = Make("UIListLayout", { Parent = self.searchDrop, SortOrder = Enum.SortOrder.LayoutOrder })
-    Make("UIPadding", { PaddingTop = UDim.new(0, 3), PaddingBottom = UDim.new(0, 3), Parent = self.searchDrop })
+    Make("UIPadding", { PaddingTop = UDim.new(0,3), PaddingBottom = UDim.new(0,3), Parent = self.searchDrop })
 
     self.searchBox:GetPropertyChangedSignal("Text"):Connect(function() self:DoSearch() end)
     self.searchBox.Focused:Connect(function() self:DoSearch() end)
     self.searchBox.FocusLost:Connect(function()
         task.delay(0.2, function()
             self.searchDrop.Visible = false
-            self.searchDrop.Size = UDim2.new(0, 280, 0, 0)
+            self.searchDrop.Size = UDim2.new(0,280,0,0)
         end)
     end)
 end
@@ -452,50 +430,47 @@ function Library:DoSearch()
     end
     if q == "" then
         self.searchDrop.Visible = false
-        self.searchDrop.Size = UDim2.new(0, 280, 0, 0)
+        self.searchDrop.Size = UDim2.new(0,280,0,0)
         return
     end
 
     local hits = {}
     for _, m in ipairs(self.mods) do
-        local ok = string.find(string.lower(m.name), q, 1, true) or string.find(string.lower(m.catN), q, 1, true)
+        local ok = string.find(string.lower(m.name), q, 1, true)
+               or  string.find(string.lower(m.catN), q, 1, true)
         if not ok then
             for _, o in ipairs(m.ol) do
                 if o.lb and string.find(string.lower(o.lb), q, 1, true) then ok = true; break end
             end
         end
-        if ok then hits[#hits + 1] = m; if #hits >= 8 then break end end
+        if ok then hits[#hits+1] = m; if #hits >= 8 then break end end
     end
 
     if #hits == 0 then
         self.searchDrop.Visible = false
-        self.searchDrop.Size = UDim2.new(0, 280, 0, 0)
+        self.searchDrop.Size = UDim2.new(0,280,0,0)
         return
     end
 
     for i, m in ipairs(hits) do
         local rb = Make("TextButton", {
             Parent = self.searchDrop, BackgroundColor3 = Theme.DrBg, BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 26), Text = "", AutoButtonColor = false,
+            Size = UDim2.new(1,0,0,26), Text = "", AutoButtonColor = false,
             LayoutOrder = i, ZIndex = 56,
         })
-        -- rounded corners on each result
-        Make("UICorner", { CornerRadius = UDim.new(0, 4), Parent = rb })
-
+        Make("UICorner", { CornerRadius = UDim.new(0,4), Parent = rb })
         Make("TextLabel", {
-            Parent = rb, BackgroundTransparency = 1, Position = UDim2.new(0, 10, 0, 0),
-            Size = UDim2.new(0.6, -10, 1, 0), Font = F.S, Text = string.lower(m.name),
-            TextColor3 = Theme.OptVal, TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 57,
+            Parent = rb, BackgroundTransparency = 1, Position = UDim2.new(0,10,0,0),
+            Size = UDim2.new(0.6,-10,1,0), Font = F.S, Text = string.lower(m.name),
+            TextColor3 = Theme.OptVal, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 57,
         })
         Make("TextLabel", {
-            Parent = rb, BackgroundTransparency = 1, Position = UDim2.new(0.6, 0, 0, 0),
-            Size = UDim2.new(0.4, -8, 1, 0), Font = F.R, Text = string.lower(m.catN),
-            TextColor3 = Theme.BindTxt, TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 57,
+            Parent = rb, BackgroundTransparency = 1, Position = UDim2.new(0.6,0,0,0),
+            Size = UDim2.new(0.4,-8,1,0), Font = F.R, Text = string.lower(m.catN),
+            TextColor3 = Theme.BindTxt, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 57,
         })
-        rb.MouseEnter:Connect(function() Tw(rb, 0.08, { BackgroundColor3 = Theme.DrHov }) end)
-        rb.MouseLeave:Connect(function() Tw(rb, 0.08, { BackgroundColor3 = Theme.DrBg }) end)
+        rb.MouseEnter:Connect(function()  Tw(rb, 0.08, { BackgroundColor3 = Theme.DrHov }) end)
+        rb.MouseLeave:Connect(function()  Tw(rb, 0.08, { BackgroundColor3 = Theme.DrBg  }) end)
         rb.MouseButton1Click:Connect(function()
             self.searchDrop.Visible = false
             self.searchBox.Text = ""
@@ -504,7 +479,7 @@ function Library:DoSearch()
     end
 
     self.searchDrop.Visible = true
-    Tw(self.searchDrop, 0.2, { Size = UDim2.new(0, 280, 0, #hits * 26 + 6) }, Enum.EasingStyle.Quart)
+    Tw(self.searchDrop, 0.2, { Size = UDim2.new(0,280,0,#hits*26+6) }, Enum.EasingStyle.Quart)
 end
 
 function Library:Pulse(mod)
@@ -513,8 +488,7 @@ function Library:Pulse(mod)
         task.wait(0.4)
     end
     task.spawn(function()
-        -- add rounded corners temporarily
-        local corner = Make("UICorner", { CornerRadius = UDim.new(0, 6), Parent = mod.box })
+        local corner = Make("UICorner", { CornerRadius = UDim.new(0,6), Parent = mod.box })
         for i = 1, 3 do
             mod.box.BackgroundColor3 = Theme.Accent
             Tw(mod.box, 0.12, { BackgroundTransparency = 0.25 })
@@ -522,7 +496,6 @@ function Library:Pulse(mod)
             Tw(mod.box, 0.2, { BackgroundTransparency = 1 })
             task.wait(0.25)
         end
-        -- remove corner after pulse
         task.wait(0.1)
         if corner and corner.Parent then corner:Destroy() end
     end)
@@ -532,30 +505,35 @@ end
 function Library:MkKBW()
     self.kbw = Make("Frame", {
         Parent = self.gui, BackgroundColor3 = Theme.CatBg, BackgroundTransparency = 0.05,
-        BorderSizePixel = 0, Position = UDim2.new(1, -175, 0.5, -80),
-        Size = UDim2.new(0, 155, 0, 26), AutomaticSize = Enum.AutomaticSize.Y,
+        BorderSizePixel = 0, Position = UDim2.new(1,-175,0.5,-80),
+        Size = UDim2.new(0,155,0,26), AutomaticSize = Enum.AutomaticSize.Y,
         Visible = false, ZIndex = 90,
     })
-    Make("UICorner", { CornerRadius = UDim.new(0, 6), Parent = self.kbw })
-    Make("UIStroke", { Color = Theme.CatBorder, Thickness = 1, Transparency = 0.3, Parent = self.kbw })
+    Make("UICorner",  { CornerRadius = UDim.new(0,6), Parent = self.kbw })
+    Make("UIStroke",  { Color = Theme.CatBorder, Thickness = 1, Transparency = 0.3, Parent = self.kbw })
     Make("UIPadding", {
-        PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
-        PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6),
+        PaddingLeft   = UDim.new(0,10), PaddingRight  = UDim.new(0,10),
+        PaddingTop    = UDim.new(0,6),  PaddingBottom = UDim.new(0,6),
         Parent = self.kbw,
     })
-    Make("UIListLayout", { Parent = self.kbw, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2) })
+    Make("UIListLayout", {
+        Parent = self.kbw, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0,2),
+    })
 
+    -- FIX 2: KbwHeader is now pure white
     Make("TextLabel", {
-        Parent = self.kbw, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20),
+        Parent = self.kbw, BackgroundTransparency = 1, Size = UDim2.new(1,0,0,20),
         Font = F.B, Text = "KEYBINDS", TextColor3 = Theme.KbwHeader,
         TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 0,
     })
 
     self.kbwList = Make("Frame", {
-        Parent = self.kbw, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 0),
+        Parent = self.kbw, BackgroundTransparency = 1, Size = UDim2.new(1,0,0,0),
         AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 1,
     })
-    Make("UIListLayout", { Parent = self.kbwList, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2) })
+    Make("UIListLayout", {
+        Parent = self.kbwList, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0,2),
+    })
 
     -- drag
     local dg, ds, sp = false, nil, nil
@@ -570,16 +548,44 @@ function Library:MkKBW()
     table.insert(self.conn, UserInputService.InputChanged:Connect(function(inp)
         if dg and inp.UserInputType == Enum.UserInputType.MouseMovement then
             local d = inp.Position - ds
-            self.kbw.Position = UDim2.new(sp.X.Scale, sp.X.Offset + d.X, sp.Y.Scale, sp.Y.Offset + d.Y)
+            self.kbw.Position = UDim2.new(sp.X.Scale, sp.X.Offset+d.X, sp.Y.Scale, sp.Y.Offset+d.Y)
         end
     end))
 
-    -- update loop
+    -- FIX 2: auto show/hide the widget + use bright KbwName/KbwBind colours
     local tk = 0
     RunService.Heartbeat:Connect(function()
-        if self.dead or not self.kbw.Visible then return end
+        if self.dead then return end
         tk = tk + 1
-        if tk % 15 ~= 0 then return end
+        if tk % 20 ~= 0 then return end
+
+        local hasActive = false
+        for _, m in ipairs(self.mods) do
+            if m.on and m.bk and m.bk ~= Enum.KeyCode.Unknown then
+                hasActive = true; break
+            end
+        end
+
+        -- smooth show
+        if hasActive and not self.kbw.Visible then
+            self.kbw.BackgroundTransparency = 0.9
+            self.kbw.Visible = true
+            Tw(self.kbw, 0.25, { BackgroundTransparency = 0.05 }, Enum.EasingStyle.Quart)
+        end
+        -- smooth hide
+        if not hasActive and self.kbw.Visible then
+            Tw(self.kbw, 0.2, { BackgroundTransparency = 0.9 }, Enum.EasingStyle.Quart)
+            task.delay(0.22, function()
+                if self.kbw.BackgroundTransparency >= 0.89 then
+                    self.kbw.Visible = false
+                    self.kbw.BackgroundTransparency = 0.05
+                end
+            end)
+        end
+
+        if not hasActive then return end
+
+        -- rebuild rows with bright colours
         for _, c in ipairs(self.kbwList:GetChildren()) do
             if c:IsA("Frame") then c:Destroy() end
         end
@@ -589,19 +595,19 @@ function Library:MkKBW()
                 idx = idx + 1
                 local r = Make("Frame", {
                     Parent = self.kbwList, BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 18), LayoutOrder = idx,
+                    Size = UDim2.new(1,0,0,18), LayoutOrder = idx,
                 })
                 Make("TextLabel", {
                     Parent = r, BackgroundTransparency = 1,
-                    Size = UDim2.new(0.65, 0, 1, 0), Font = F.S,
-                    Text = m.name, TextColor3 = Theme.KbwName,
+                    Size = UDim2.new(0.65,0,1,0), Font = F.S,
+                    Text = m.name, TextColor3 = Theme.KbwName,   -- FIX 2
                     TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left,
                 })
                 Make("TextLabel", {
                     Parent = r, BackgroundTransparency = 1,
-                    Position = UDim2.new(0.65, 0, 0, 0),
-                    Size = UDim2.new(0.35, 0, 1, 0), Font = F.R,
-                    Text = "[" .. m.bk.Name .. "]", TextColor3 = Theme.KbwBind,
+                    Position = UDim2.new(0.65,0,0,0),
+                    Size = UDim2.new(0.35,0,1,0), Font = F.R,
+                    Text = "[" .. m.bk.Name .. "]", TextColor3 = Theme.KbwBind,  -- FIX 2
                     TextSize = 10, TextXAlignment = Enum.TextXAlignment.Right,
                 })
             end
@@ -632,35 +638,35 @@ function Library:UAcc(c)
         if l and l.Parent then l.TextColor3 = c end
     end
 end
-function Library:Trk(i, p) self.accTrk[#self.accTrk + 1] = { i = i, p = p } end
+function Library:Trk(i, p) self.accTrk[#self.accTrk+1] = { i = i, p = p } end
 
 -- config
 function Library:Save(n)
     local d = { opts = {}, mods = {} }
     for id, o in pairs(self.opts) do
         local e = { id = id, t = o.Type }
-        if o.Type == "Toggle" then e.v = o.Value
-        elseif o.Type == "Slider" then e.v = o.Value
-        elseif o.Type == "Dropdown" then e.v = o.Value
+        if     o.Type == "Toggle"      then e.v = o.Value
+        elseif o.Type == "Slider"      then e.v = o.Value
+        elseif o.Type == "Dropdown"    then e.v = o.Value
         elseif o.Type == "ColorPicker" then e.v = { o.Value.R, o.Value.G, o.Value.B }
-        elseif o.Type == "Keybind" then
+        elseif o.Type == "Keybind"     then
             e.v = o.Value ~= Enum.KeyCode.Unknown and o.Value.Name or "Unknown"
             e.m = o.Mode
         end
-        d.opts[#d.opts + 1] = e
+        d.opts[#d.opts+1] = e
     end
     for _, m in ipairs(self.mods) do
-        d.mods[#d.mods + 1] = {
+        d.mods[#d.mods+1] = {
             id = m.fid, on = m.on,
             bk = m.bk and m.bk ~= Enum.KeyCode.Unknown and m.bk.Name or nil,
             bm = m.bm,
         }
     end
-    FM(CFG_DIR); FW(CFG_DIR .. "/" .. n .. ".json", HttpService:JSONEncode(d))
+    FM(CFG_DIR); FW(CFG_DIR.."/"..n..".json", HttpService:JSONEncode(d))
 end
 
 function Library:Load(n)
-    local raw = FR(CFG_DIR .. "/" .. n .. ".json")
+    local raw = FR(CFG_DIR.."/"..n..".json")
     if not raw then return end
     local ok, d = pcall(function() return HttpService:JSONDecode(raw) end)
     if not ok or not d then return end
@@ -668,11 +674,13 @@ function Library:Load(n)
         for _, e in ipairs(d.opts) do
             local o = self.opts[e.id]
             if o and o.Set then pcall(function()
-                if o.Type == "Toggle" then o:Set(e.v)
-                elseif o.Type == "Slider" then o:Set(e.v)
-                elseif o.Type == "Dropdown" then o:Set(e.v)
-                elseif o.Type == "ColorPicker" and e.v then o:Set(Color3.new(e.v[1], e.v[2], e.v[3]))
-                elseif o.Type == "Keybind" then o:Set(Enum.KeyCode[e.v] or Enum.KeyCode.Unknown, e.m)
+                if     o.Type == "Toggle"      then o:Set(e.v)
+                elseif o.Type == "Slider"      then o:Set(e.v)
+                elseif o.Type == "Dropdown"    then o:Set(e.v)
+                elseif o.Type == "ColorPicker" and e.v then
+                    o:Set(Color3.new(e.v[1], e.v[2], e.v[3]))
+                elseif o.Type == "Keybind" then
+                    o:Set(Enum.KeyCode[e.v] or Enum.KeyCode.Unknown, e.m)
                 end
             end) end
         end
@@ -690,25 +698,47 @@ function Library:Load(n)
     end
 end
 
-function Library:Del(n) FD(CFG_DIR .. "/" .. n .. ".json") end
+function Library:Del(n)  FD(CFG_DIR.."/"..n..".json") end
 function Library:Cfgs()
     local f = FL(CFG_DIR); local o = {}
     for _, x in ipairs(f) do
         local n = x:match("([^/\\]+)%.json$")
-        if n and n ~= AUTO_CFG then o[#o + 1] = n end
+        if n and n ~= AUTO_CFG then o[#o+1] = n end
     end
     return o
 end
 
+-- FIX 3: Unload has a full animated exit before destroying
 function Library:Unload()
-    self.dead = true; self:Save(AUTO_CFG)
+    self.dead = true
+    self:Save(AUTO_CFG)
+
+    -- Accent flash over the full screen
+    local flash = Make("Frame", {
+        Parent = self.gui, BackgroundColor3 = Theme.Accent,
+        BackgroundTransparency = 0.82, Size = UDim2.new(1,0,1,0), ZIndex = 999,
+    })
+    Tw(flash, 0.6, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quart)
+
+    -- Fade + float-up the content and search layers
+    Tw(self.cLayer, 0.4, { GroupTransparency = 1 }, Enum.EasingStyle.Quart)
+    Tw(self.sLayer, 0.4, { GroupTransparency = 1 }, Enum.EasingStyle.Quart)
+    Tw(self.scroll, 0.4, { Position = UDim2.new(0.5,0,0,30) }, Enum.EasingStyle.Quart)
+
+    -- Fade keybind widget if visible
+    if self.kbw.Visible then
+        Tw(self.kbw, 0.3, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quart)
+    end
+
+    task.wait(0.5)
     for _, m in ipairs(self.mods) do m:SetOn(false) end
     for _, c in ipairs(self.conn) do pcall(function() c:Disconnect() end) end
-    task.wait(0.1); self.gui:Destroy()
+    task.wait(0.1)
+    self.gui:Destroy()
 end
 
 -- ═══════════════════════════════════
--- CATEGORY - FIXED COLLAPSE/EXPAND
+-- CATEGORY
 -- ═══════════════════════════════════
 function Library:Cat(catName)
     local cat = {
@@ -719,51 +749,50 @@ function Library:Cat(catName)
 
     cat.frame = Make("Frame", {
         Parent = self.scroll, BackgroundColor3 = Theme.CatBg, BackgroundTransparency = 0.06,
-        BorderSizePixel = 0, Size = UDim2.new(0, 200, 0, 36), LayoutOrder = idx, ZIndex = 1,
+        BorderSizePixel = 0, Size = UDim2.new(0,200,0,36), LayoutOrder = idx, ZIndex = 1,
     })
-    Make("UICorner", { CornerRadius = UDim.new(0, 6), Parent = cat.frame })
+    Make("UICorner", { CornerRadius = UDim.new(0,6), Parent = cat.frame })
     Make("UIStroke", { Color = Theme.CatBorder, Thickness = 1, Transparency = 0.4, Parent = cat.frame })
 
     local hBtn = Make("TextButton", {
         Parent = cat.frame, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 36), Text = "", AutoButtonColor = false, ZIndex = 2,
+        Size = UDim2.new(1,0,0,36), Text = "", AutoButtonColor = false, ZIndex = 2,
     })
 
     local hLbl = Make("TextLabel", {
         Parent = hBtn, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(1, -36, 1, 0),
+        Position = UDim2.new(0,12,0,0), Size = UDim2.new(1,-36,1,0),
         Font = F.B, Text = string.upper(catName), TextColor3 = Theme.Accent,
         TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 3,
     })
     self:Trk(hLbl, "TextColor3")
-    self.catHdrs[#self.catHdrs + 1] = hLbl
+    self.catHdrs[#self.catHdrs+1] = hLbl
 
     local arrow = Make("TextLabel", {
         Parent = hBtn, BackgroundTransparency = 1,
-        Position = UDim2.new(1, -24, 0, 0), Size = UDim2.new(0, 14, 1, 0),
+        Position = UDim2.new(1,-24,0,0), Size = UDim2.new(0,14,1,0),
         Font = F.R, Text = "▼", TextColor3 = Theme.BindTxt, TextSize = 9, ZIndex = 3,
     })
 
     local sep = Make("Frame", {
         Parent = cat.frame, BackgroundColor3 = Theme.Sep, BackgroundTransparency = 0.5,
-        BorderSizePixel = 0, Position = UDim2.new(0, 12, 0, 36),
-        Size = UDim2.new(1, -24, 0, 1), ZIndex = 2,
+        BorderSizePixel = 0, Position = UDim2.new(0,12,0,36),
+        Size = UDim2.new(1,-24,0,1), ZIndex = 2,
     })
 
     cat.ml = Make("Frame", {
         Parent = cat.frame, BackgroundTransparency = 1,
-        Position = UDim2.new(0, 12, 0, 40),
-        Size = UDim2.new(1, -24, 0, 0), ClipsDescendants = true, ZIndex = 2,
+        Position = UDim2.new(0,12,0,40),
+        Size = UDim2.new(1,-24,0,0), ClipsDescendants = true, ZIndex = 2,
     })
 
     cat.mlLayout = Make("UIListLayout", {
-        Parent = cat.ml, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 0),
+        Parent = cat.ml, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0,0),
     })
 
-    -- FIXED EXPAND: force lastH to -1 so heartbeat picks it up
     function cat:Expand()
         self.collapsed = false
-        self.lastH = -1 -- force heartbeat to recalc
+        self.lastH = -1  -- force heartbeat recalc
         arrow.Text = "▼"
         sep.Visible = true
     end
@@ -772,8 +801,8 @@ function Library:Cat(catName)
         self.collapsed = true
         arrow.Text = "▶"
         self.lastH = 0
-        Tw(self.ml, 0.3, { Size = UDim2.new(1, -24, 0, 0) }, Enum.EasingStyle.Quart)
-        Tw(self.frame, 0.3, { Size = UDim2.new(0, 200, 0, 36) }, Enum.EasingStyle.Quart)
+        Tw(self.ml,    0.3, { Size = UDim2.new(1,-24,0,0)  }, Enum.EasingStyle.Quart)
+        Tw(self.frame, 0.3, { Size = UDim2.new(0,200,0,36) }, Enum.EasingStyle.Quart)
         task.delay(0.3, function()
             if self.collapsed then sep.Visible = false end
         end)
@@ -782,75 +811,75 @@ function Library:Cat(catName)
     hBtn.MouseButton1Click:Connect(function()
         if cat.collapsed then cat:Expand() else cat:Collapse() end
     end)
-    hBtn.MouseEnter:Connect(function() Tw(hLbl, 0.1, { TextColor3 = Color3.fromRGB(255, 180, 210) }) end)
+    hBtn.MouseEnter:Connect(function() Tw(hLbl, 0.1, { TextColor3 = Color3.fromRGB(255,180,210) }) end)
     hBtn.MouseLeave:Connect(function() Tw(hLbl, 0.1, { TextColor3 = Theme.Accent }) end)
 
     function cat:Mod(n) return Library._Mod(self, n) end
 
-    self.cats[#self.cats + 1] = cat
+    self.cats[#self.cats+1] = cat
     return cat
 end
 
 -- ═══════════════════════════════════
--- MODULE (same as before, compact)
+-- MODULE
 -- ═══════════════════════════════════
 function Library._Mod(cat, name)
     local lib = cat.lib
     local mod = {
         name = name, on = false, exp = false,
         ol = {}, oc = 0, bk = nil, bm = "toggle",
-        fid = cat.name .. "." .. name, catN = cat.name, catRef = cat, cb = nil,
+        fid = cat.name.."."..name, catN = cat.name, catRef = cat, cb = nil,
     }
     local mi = #cat.mods + 1
 
     mod.box = Make("Frame", {
         Parent = cat.ml, BackgroundColor3 = Theme.Accent, BackgroundTransparency = 1,
-        BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 26), LayoutOrder = mi,
+        BorderSizePixel = 0, Size = UDim2.new(1,0,0,26), LayoutOrder = mi,
         ClipsDescendants = true, ZIndex = 2,
     })
 
     local hb = Make("TextButton", {
-        Parent = mod.box, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 26),
+        Parent = mod.box, BackgroundTransparency = 1, Size = UDim2.new(1,0,0,26),
         Text = "", AutoButtonColor = false, ZIndex = 3,
     })
 
     mod.nl = Make("TextLabel", {
-        Parent = hb, BackgroundTransparency = 1, Size = UDim2.new(1, -72, 1, 0),
+        Parent = hb, BackgroundTransparency = 1, Size = UDim2.new(1,-72,1,0),
         Font = F.S, Text = string.lower(name), TextColor3 = Theme.ModOff,
         TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 4,
     })
 
     mod.bl = Make("TextLabel", {
-        Parent = hb, BackgroundTransparency = 1, Position = UDim2.new(1, -70, 0, 0),
-        Size = UDim2.new(0, 68, 1, 0), Font = F.R, Text = "", TextColor3 = Theme.BindTxt,
+        Parent = hb, BackgroundTransparency = 1, Position = UDim2.new(1,-70,0,0),
+        Size = UDim2.new(0,68,1,0), Font = F.R, Text = "", TextColor3 = Theme.BindTxt,
         TextSize = 11, TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 4,
     })
 
     mod.of = Make("Frame", {
-        Parent = mod.box, BackgroundTransparency = 1, Position = UDim2.new(0, 8, 0, 26),
-        Size = UDim2.new(1, -8, 0, 0), ClipsDescendants = true, ZIndex = 3,
+        Parent = mod.box, BackgroundTransparency = 1, Position = UDim2.new(0,8,0,26),
+        Size = UDim2.new(1,-8,0,0), ClipsDescendants = true, ZIndex = 3,
     })
 
     mod.ab = Make("Frame", {
         Parent = mod.of, BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.55,
-        BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 2),
-        Size = UDim2.new(0, 2, 1, -4), ZIndex = 4,
+        BorderSizePixel = 0, Position = UDim2.new(0,0,0,2),
+        Size = UDim2.new(0,2,1,-4), ZIndex = 4,
     })
     lib:Trk(mod.ab, "BackgroundColor3")
 
     mod.oi = Make("Frame", {
-        Parent = mod.of, BackgroundTransparency = 1, Position = UDim2.new(0, 12, 0, 0),
-        Size = UDim2.new(1, -16, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, ZIndex = 4,
+        Parent = mod.of, BackgroundTransparency = 1, Position = UDim2.new(0,12,0,0),
+        Size = UDim2.new(1,-16,0,0), AutomaticSize = Enum.AutomaticSize.Y, ZIndex = 4,
     })
 
     mod.oiL = Make("UIListLayout", {
-        Parent = mod.oi, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 3),
+        Parent = mod.oi, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0,3),
     })
-    Make("UIPadding", { Parent = mod.oi, PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8) })
+    Make("UIPadding", { Parent = mod.oi, PaddingTop = UDim.new(0,4), PaddingBottom = UDim.new(0,8) })
 
     function mod:UB()
         if self.bk and self.bk ~= Enum.KeyCode.Unknown then
-            self.bl.Text = "[" .. self.bk.Name .. "]"
+            self.bl.Text = "["..self.bk.Name.."]"
         else self.bl.Text = "" end
     end
 
@@ -865,8 +894,8 @@ function Library._Mod(cat, name)
             task.wait(0.03)
             if mod.exp then
                 local h = mod.oiL.AbsoluteContentSize.Y + 12
-                Tw(mod.of, 0.3, { Size = UDim2.new(1, -8, 0, h) }, Enum.EasingStyle.Quart)
-                Tw(mod.box, 0.3, { Size = UDim2.new(1, 0, 0, 26 + h) }, Enum.EasingStyle.Quart)
+                Tw(mod.of,  0.3, { Size = UDim2.new(1,-8,0,h)      }, Enum.EasingStyle.Quart)
+                Tw(mod.box, 0.3, { Size = UDim2.new(1,0,0,26+h)    }, Enum.EasingStyle.Quart)
             end
         end)
     end
@@ -878,17 +907,17 @@ function Library._Mod(cat, name)
         mod.exp = not mod.exp
         if mod.exp then
             local h = mod.oiL.AbsoluteContentSize.Y + 12
-            Tw(mod.of, 0.3, { Size = UDim2.new(1, -8, 0, h) }, Enum.EasingStyle.Quart)
-            Tw(mod.box, 0.3, { Size = UDim2.new(1, 0, 0, 26 + h) }, Enum.EasingStyle.Quart)
+            Tw(mod.of,  0.3, { Size = UDim2.new(1,-8,0,h)   }, Enum.EasingStyle.Quart)
+            Tw(mod.box, 0.3, { Size = UDim2.new(1,0,0,26+h) }, Enum.EasingStyle.Quart)
         else
             lib:CPop()
-            Tw(mod.of, 0.25, { Size = UDim2.new(1, -8, 0, 0) }, Enum.EasingStyle.Quart)
-            Tw(mod.box, 0.25, { Size = UDim2.new(1, 0, 0, 26) }, Enum.EasingStyle.Quart)
+            Tw(mod.of,  0.25, { Size = UDim2.new(1,-8,0,0) }, Enum.EasingStyle.Quart)
+            Tw(mod.box, 0.25, { Size = UDim2.new(1,0,0,26) }, Enum.EasingStyle.Quart)
         end
     end)
 
     hb.MouseEnter:Connect(function()
-        if not mod.on then Tw(mod.nl, 0.08, { TextColor3 = Color3.fromRGB(225, 225, 235) }) end
+        if not mod.on then Tw(mod.nl, 0.08, { TextColor3 = Color3.fromRGB(225,225,235) }) end
     end)
     hb.MouseLeave:Connect(function()
         if not mod.on then Tw(mod.nl, 0.08, { TextColor3 = Theme.ModOff }) end
@@ -914,8 +943,8 @@ function Library._Mod(cat, name)
 
     function mod:Separator() self.oc=self.oc+1; local s=Make("Frame",{Parent=self.oi,BackgroundTransparency=1,Size=UDim2.new(1,0,0,6),LayoutOrder=self.oc,ZIndex=5}); Make("Frame",{Parent=s,BackgroundColor3=Theme.Sep,BorderSizePixel=0,Position=UDim2.new(0,0,0.5,0),Size=UDim2.new(1,0,0,1),ZIndex=6}); task.defer(recalc) end
 
-    cat.mods[#cat.mods + 1] = mod
-    lib.mods[#lib.mods + 1] = mod
+    cat.mods[#cat.mods+1] = mod
+    lib.mods[#lib.mods+1] = mod
     return mod
 end
 
