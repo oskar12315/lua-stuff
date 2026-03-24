@@ -7,13 +7,8 @@ local LocalPlayer = Players.LocalPlayer
 
 local Library = {}
 Library.__index = Library
-Library._allModules = {}
-Library._keybindWidgetEnabled = false
-Library._keybindWidgetFrame = nil
-Library._configFolder = "MCClientConfigs"
 
 local Theme = {
-    Background       = Color3.fromRGB(22, 22, 28),
     CategoryBg       = Color3.fromRGB(28, 28, 36),
     CategoryBorder   = Color3.fromRGB(48, 48, 60),
     CategoryHeader   = Color3.fromRGB(200, 200, 215),
@@ -21,9 +16,8 @@ local Theme = {
     ModuleDisabled   = Color3.fromRGB(185, 185, 195),
     OptionText       = Color3.fromRGB(150, 150, 162),
     OptionValue      = Color3.fromRGB(215, 215, 225),
-    AccentPink       = Color3.fromRGB(230, 140, 180),
+    Accent           = Color3.fromRGB(230, 140, 180),
     SliderBg         = Color3.fromRGB(42, 42, 52),
-    SliderFill       = Color3.fromRGB(230, 140, 180),
     ToggleOn         = Color3.fromRGB(230, 140, 180),
     ToggleOff        = Color3.fromRGB(55, 55, 68),
     Knob             = Color3.fromRGB(220, 220, 230),
@@ -38,23 +32,22 @@ local Theme = {
     FontBold         = Enum.Font.GothamBold,
 }
 
--- ═══════════════════════════════════
--- UTILS
--- ═══════════════════════════════════
-local function Create(c, p, ch)
+local CONFIG_FOLDER = "MCClientConfigs"
+local AUTO_CONFIG = "_autoload"
+
+local function Create(c, p)
     local i = Instance.new(c)
     if p then
         for k, v in pairs(p) do
-            if k ~= "Parent" then i[k] = v end
+            if k ~= "Parent" then pcall(function() i[k] = v end) end
         end
         if p.Parent then i.Parent = p.Parent end
     end
-    if ch then for _, x in ipairs(ch) do x.Parent = i end end
     return i
 end
 
-local function Tween(inst, dur, props, style, dir)
-    local t = TweenService:Create(inst, TweenInfo.new(dur, style or Enum.EasingStyle.Quad, dir or Enum.EasingDirection.Out), props)
+local function Tween(inst, dur, props, style)
+    local t = TweenService:Create(inst, TweenInfo.new(dur, style or Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props)
     t:Play()
     return t
 end
@@ -74,62 +67,47 @@ local function HSVfromRGB(c)
     return h, s, v
 end
 
--- safe file system
-local function SafeWriteFile(path, content)
-    pcall(function()
-        if writefile then writefile(path, content) end
-    end)
+local function SafeWrite(path, content)
+    pcall(function() if writefile then writefile(path, content) end end)
 end
-
-local function SafeReadFile(path)
-    local ok, result = pcall(function()
-        if readfile and isfile and isfile(path) then
-            return readfile(path)
-        end
-        return nil
+local function SafeRead(path)
+    local ok, r = pcall(function()
+        if readfile and isfile and isfile(path) then return readfile(path) end
     end)
-    return ok and result or nil
+    return ok and r or nil
 end
-
-local function SafeDeleteFile(path)
-    pcall(function()
-        if delfile and isfile and isfile(path) then delfile(path) end
-    end)
+local function SafeDelete(path)
+    pcall(function() if delfile and isfile and isfile(path) then delfile(path) end end)
 end
-
-local function SafeMakeFolder(path)
-    pcall(function()
-        if makefolder and not isfolder(path) then makefolder(path) end
-    end)
+local function SafeMkdir(path)
+    pcall(function() if makefolder and (not isfolder or not isfolder(path)) then makefolder(path) end end)
 end
-
-local function SafeListFiles(path)
-    local ok, result = pcall(function()
-        if listfiles and isfolder and isfolder(path) then
-            return listfiles(path)
-        end
+local function SafeList(path)
+    local ok, r = pcall(function()
+        if listfiles and isfolder and isfolder(path) then return listfiles(path) end
         return {}
     end)
-    return ok and result or {}
+    return ok and r or {}
 end
 
--- ═══════════════════════════════════
--- MAIN
--- ═══════════════════════════════════
 function Library.new(clientName)
     local self = setmetatable({}, Library)
     self.Name = clientName or "Client"
     self.Categories = {}
     self.Visible = true
     self.ToggleKey = Enum.KeyCode.RightShift
-    self._allModules = {}
-    self._allOptions = {}
+    self._modules = {}
+    self._options = {}
     self._connections = {}
+    self._accentElements = {}
+    self._popups = {}
+    self._activePopup = nil
+    self._unloaded = false
 
     local existing = LocalPlayer.PlayerGui:FindFirstChild("MCClientUI")
     if existing then existing:Destroy() end
 
-    self.ScreenGui = Create("ScreenGui", {
+    self.Gui = Create("ScreenGui", {
         Name = "MCClientUI",
         Parent = LocalPlayer:WaitForChild("PlayerGui"),
         ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
@@ -137,14 +115,13 @@ function Library.new(clientName)
         DisplayOrder = 999,
     })
 
-    -- main container - NO dark overlay, just the columns
     self.MainFrame = Create("ScrollingFrame", {
-        Name = "MainFrame",
-        Parent = self.ScreenGui,
+        Name = "Main",
+        Parent = self.Gui,
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Position = UDim2.new(0, 16, 0, 55),
-        Size = UDim2.new(1, -32, 1, -70),
+        Position = UDim2.new(0, 16, 0, 16),
+        Size = UDim2.new(1, -32, 1, -32),
         CanvasSize = UDim2.new(0, 0, 0, 0),
         AutomaticCanvasSize = Enum.AutomaticSize.X,
         ScrollBarThickness = 0,
@@ -167,286 +144,304 @@ function Library.new(clientName)
         PaddingTop = UDim.new(0, 4),
     })
 
+    -- popup layer (renders above everything)
+    self.PopupLayer = Create("Frame", {
+        Name = "Popups",
+        Parent = self.Gui,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0),
+        ZIndex = 100,
+    })
+
+    -- click-away to close popups
+    local popupClickAway = Create("TextButton", {
+        Name = "ClickAway",
+        Parent = self.PopupLayer,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0),
+        Text = "",
+        ZIndex = 99,
+        Visible = false,
+    })
+    self._clickAway = popupClickAway
+
+    popupClickAway.MouseButton1Click:Connect(function()
+        self:_closeActivePopup()
+    end)
+
     -- keybind widget
-    self:_createKeybindWidget()
+    self:_buildKeybindWidget()
 
     -- toggle UI
     table.insert(self._connections, UserInputService.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
+        if gpe or self._unloaded then return end
         if input.KeyCode == self.ToggleKey then
             self.Visible = not self.Visible
             self.MainFrame.Visible = self.Visible
+            if not self.Visible then self:_closeActivePopup() end
         end
     end))
 
     -- keybind processing
     local heldKeys = {}
     table.insert(self._connections, UserInputService.InputBegan:Connect(function(input, gpe)
-        if gpe then return end
+        if gpe or self._unloaded then return end
         if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
         heldKeys[input.KeyCode] = true
-        for _, mod in ipairs(self._allModules) do
-            if mod._bindKey and mod._bindKey == input.KeyCode and mod._bindKey ~= Enum.KeyCode.Unknown then
-                local mode = mod._bindMode or "toggle"
-                if mode == "toggle" then
-                    mod:SetEnabled(not mod.Enabled)
-                elseif mode == "hold" then
-                    mod:SetEnabled(true)
+        for _, m in ipairs(self._modules) do
+            if m._bindKey and m._bindKey == input.KeyCode and m._bindKey ~= Enum.KeyCode.Unknown then
+                if m._bindMode == "toggle" then
+                    m:SetEnabled(not m.Enabled)
+                elseif m._bindMode == "hold" then
+                    m:SetEnabled(true)
                 end
-                -- "always" is handled in RunService
             end
         end
     end))
 
-    table.insert(self._connections, UserInputService.InputEnded:Connect(function(input, gpe)
+    table.insert(self._connections, UserInputService.InputEnded:Connect(function(input)
+        if self._unloaded then return end
         if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
         heldKeys[input.KeyCode] = nil
-        for _, mod in ipairs(self._allModules) do
-            if mod._bindKey and mod._bindKey == input.KeyCode and mod._bindKey ~= Enum.KeyCode.Unknown then
-                local mode = mod._bindMode or "toggle"
-                if mode == "hold" then
-                    mod:SetEnabled(false)
-                end
+        for _, m in ipairs(self._modules) do
+            if m._bindKey and m._bindKey == input.KeyCode and m._bindMode == "hold" then
+                m:SetEnabled(false)
             end
         end
     end))
 
-    SafeMakeFolder(Library._configFolder)
+    SafeMkdir(CONFIG_FOLDER)
+
+    -- auto load last config
+    task.defer(function()
+        task.wait(0.5)
+        self:LoadConfig(AUTO_CONFIG)
+    end)
 
     return self
 end
 
--- ═══════════════════════════════════
+function Library:_closeActivePopup()
+    if self._activePopup then
+        local popup = self._activePopup
+        self._activePopup = nil
+        self._clickAway.Visible = false
+        if popup.close then popup.close() end
+    end
+end
+
+function Library:_openPopup(popupData)
+    self:_closeActivePopup()
+    self._activePopup = popupData
+    self._clickAway.Visible = true
+end
+
+function Library:_updateAccent(color)
+    Theme.Accent = color
+    Theme.ModuleEnabled = color
+    Theme.ToggleOn = color
+    Theme.SliderFill = color
+    for _, entry in ipairs(self._accentElements) do
+        if entry.inst and entry.inst.Parent then
+            pcall(function()
+                entry.inst[entry.prop] = color
+            end)
+        end
+    end
+    for _, m in ipairs(self._modules) do
+        if m.Enabled and m.NameLabel then
+            m.NameLabel.TextColor3 = color
+        end
+        if m.AccentBar then
+            m.AccentBar.BackgroundColor3 = color
+        end
+    end
+end
+
+function Library:_trackAccent(inst, prop)
+    table.insert(self._accentElements, { inst = inst, prop = prop })
+end
+
+-- ═══════════════════════════════
 -- KEYBIND WIDGET
--- ═══════════════════════════════════
-function Library:_createKeybindWidget()
-    self._keybindWidgetFrame = Create("Frame", {
-        Name = "KeybindWidget",
-        Parent = self.ScreenGui,
+-- ═══════════════════════════════
+function Library:_buildKeybindWidget()
+    self._kbWidget = Create("Frame", {
+        Name = "KBWidget",
+        Parent = self.Gui,
         BackgroundColor3 = Theme.CategoryBg,
         BackgroundTransparency = 0.08,
         BorderSizePixel = 0,
-        Position = UDim2.new(1, -180, 0.5, -100),
-        Size = UDim2.new(0, 160, 0, 30),
+        Position = UDim2.new(1, -175, 0.5, -80),
+        Size = UDim2.new(0, 155, 0, 26),
         AutomaticSize = Enum.AutomaticSize.Y,
         Visible = false,
     })
-    Create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = self._keybindWidgetFrame })
-    Create("UIStroke", { Color = Theme.CategoryBorder, Thickness = 1, Transparency = 0.4, Parent = self._keybindWidgetFrame })
+    Create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = self._kbWidget })
+    Create("UIStroke", { Color = Theme.CategoryBorder, Thickness = 1, Transparency = 0.4, Parent = self._kbWidget })
+    Create("UIPadding", { PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10), PaddingTop = UDim.new(0, 6), PaddingBottom = UDim.new(0, 6), Parent = self._kbWidget })
 
     Create("TextLabel", {
-        Parent = self._keybindWidgetFrame,
+        Parent = self._kbWidget,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 26),
+        Size = UDim2.new(1, 0, 0, 20),
         Font = Theme.FontBold,
         Text = "KEYBINDS",
         TextColor3 = Theme.CategoryHeader,
         TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left,
         LayoutOrder = 0,
     })
 
-    Create("UIPadding", {
-        Parent = self._keybindWidgetFrame,
-        PaddingLeft = UDim.new(0, 10),
-        PaddingRight = UDim.new(0, 10),
-        PaddingTop = UDim.new(0, 6),
-        PaddingBottom = UDim.new(0, 6),
-    })
-
-    self._keybindWidgetList = Create("Frame", {
-        Parent = self._keybindWidgetFrame,
+    self._kbList = Create("Frame", {
+        Parent = self._kbWidget,
         BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         LayoutOrder = 1,
     })
+    Create("UIListLayout", { Parent = self._kbList, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 1) })
+    Create("UIListLayout", { Parent = self._kbWidget, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2) })
 
-    Create("UIListLayout", {
-        Parent = self._keybindWidgetList,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 2),
-    })
-
-    Create("UIListLayout", {
-        Parent = self._keybindWidgetFrame,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 2),
-    })
-
-    -- dragging for widget
+    -- drag
     local dragging, dragStart, startPos = false, nil, nil
-    self._keybindWidgetFrame.InputBegan:Connect(function(input)
+    self._kbWidget.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            dragging = true
-            dragStart = input.Position
-            startPos = self._keybindWidgetFrame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
+            dragging = true; dragStart = input.Position; startPos = self._kbWidget.Position
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
         end
     end)
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local d = input.Position - dragStart
-            self._keybindWidgetFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+            self._kbWidget.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
         end
     end)
 
-    -- update loop
+    -- update
     RunService.Heartbeat:Connect(function()
-        if not self._keybindWidgetFrame.Visible then return end
-        -- clear old
-        for _, c in ipairs(self._keybindWidgetList:GetChildren()) do
-            if c:IsA("Frame") then c:Destroy() end
-        end
-        -- rebuild active binds
+        if self._unloaded or not self._kbWidget.Visible then return end
+        for _, c in ipairs(self._kbList:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
         local idx = 0
-        for _, mod in ipairs(self._allModules) do
-            if mod.Enabled and mod._bindKey and mod._bindKey ~= Enum.KeyCode.Unknown then
+        for _, m in ipairs(self._modules) do
+            if m.Enabled and m._bindKey and m._bindKey ~= Enum.KeyCode.Unknown then
                 idx = idx + 1
-                local r = Create("Frame", {
-                    Parent = self._keybindWidgetList,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 18),
-                    LayoutOrder = idx,
-                })
-                Create("TextLabel", {
-                    Parent = r,
-                    BackgroundTransparency = 1,
-                    Size = UDim2.new(0.65, 0, 1, 0),
-                    Font = Theme.Font,
-                    Text = mod.Name,
-                    TextColor3 = Theme.ModuleEnabled,
-                    TextSize = 11,
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                })
-                Create("TextLabel", {
-                    Parent = r,
-                    BackgroundTransparency = 1,
-                    Position = UDim2.new(0.65, 0, 0, 0),
-                    Size = UDim2.new(0.35, 0, 1, 0),
-                    Font = Theme.Font,
-                    Text = "[" .. mod._bindKey.Name .. "]",
-                    TextColor3 = Theme.BindText,
-                    TextSize = 10,
-                    TextXAlignment = Enum.TextXAlignment.Right,
-                })
+                local r = Create("Frame", { Parent = self._kbList, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16), LayoutOrder = idx })
+                local nl = Create("TextLabel", { Parent = r, BackgroundTransparency = 1, Size = UDim2.new(0.7, 0, 1, 0), Font = Theme.Font, Text = m.Name, TextColor3 = Theme.Accent, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left })
+                self:_trackAccent(nl, "TextColor3")
+                Create("TextLabel", { Parent = r, BackgroundTransparency = 1, Position = UDim2.new(0.7, 0, 0, 0), Size = UDim2.new(0.3, 0, 1, 0), Font = Theme.Font, Text = "[" .. m._bindKey.Name .. "]", TextColor3 = Theme.BindText, TextSize = 9, TextXAlignment = Enum.TextXAlignment.Right })
             end
         end
     end)
 end
 
-function Library:SetKeybindWidgetVisible(visible)
-    self._keybindWidgetEnabled = visible
-    self._keybindWidgetFrame.Visible = visible
-end
-
--- ═══════════════════════════════════
--- CONFIG SYSTEM
--- ═══════════════════════════════════
+-- ═══════════════════════════════
+-- CONFIG
+-- ═══════════════════════════════
 function Library:SaveConfig(name)
-    local data = {}
-    for id, opt in pairs(self._allOptions) do
-        local entry = { id = id, type = opt.Type }
-        if opt.Type == "Toggle" then
-            entry.value = opt.Value
-        elseif opt.Type == "Slider" then
-            entry.value = opt.Value
-        elseif opt.Type == "Dropdown" then
-            entry.value = opt.Value
-        elseif opt.Type == "ColorPicker" then
-            entry.value = { opt.Value.R, opt.Value.G, opt.Value.B }
+    local data = { options = {}, modules = {} }
+    for id, opt in pairs(self._options) do
+        local e = { id = id, type = opt.Type }
+        if opt.Type == "Toggle" then e.value = opt.Value
+        elseif opt.Type == "Slider" then e.value = opt.Value
+        elseif opt.Type == "Dropdown" then e.value = opt.Value
+        elseif opt.Type == "ColorPicker" then e.value = { opt.Value.R, opt.Value.G, opt.Value.B }
         elseif opt.Type == "Keybind" then
-            entry.value = opt.Value ~= Enum.KeyCode.Unknown and opt.Value.Name or "Unknown"
-            entry.mode = opt.Mode or "toggle"
+            e.value = opt.Value ~= Enum.KeyCode.Unknown and opt.Value.Name or "Unknown"
+            e.mode = opt.Mode or "toggle"
         end
-        table.insert(data, entry)
+        table.insert(data.options, e)
     end
-
-    -- also save module states
-    local modStates = {}
-    for _, mod in ipairs(self._allModules) do
-        table.insert(modStates, {
-            name = mod._fullId,
-            enabled = mod.Enabled,
-            bindKey = mod._bindKey and mod._bindKey ~= Enum.KeyCode.Unknown and mod._bindKey.Name or nil,
-            bindMode = mod._bindMode or "toggle",
+    for _, m in ipairs(self._modules) do
+        table.insert(data.modules, {
+            id = m._id,
+            enabled = m.Enabled,
+            bindKey = m._bindKey and m._bindKey ~= Enum.KeyCode.Unknown and m._bindKey.Name or nil,
+            bindMode = m._bindMode,
         })
     end
-
-    local saveData = { options = data, modules = modStates }
-    local json = HttpService:JSONEncode(saveData)
-    SafeMakeFolder(Library._configFolder)
-    SafeWriteFile(Library._configFolder .. "/" .. name .. ".json", json)
+    SafeMkdir(CONFIG_FOLDER)
+    SafeWrite(CONFIG_FOLDER .. "/" .. name .. ".json", HttpService:JSONEncode(data))
 end
 
 function Library:LoadConfig(name)
-    local raw = SafeReadFile(Library._configFolder .. "/" .. name .. ".json")
+    local raw = SafeRead(CONFIG_FOLDER .. "/" .. name .. ".json")
     if not raw then return false end
+    local ok, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not ok or not data then return false end
 
-    local ok, saveData = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not ok or not saveData then return false end
-
-    -- load options
-    if saveData.options then
-        for _, entry in ipairs(saveData.options) do
-            local opt = self._allOptions[entry.id]
-            if opt then
-                if opt.Type == "Toggle" and entry.value ~= nil then
-                    opt:Set(entry.value)
-                elseif opt.Type == "Slider" and entry.value then
-                    opt:Set(entry.value)
-                elseif opt.Type == "Dropdown" and entry.value then
-                    opt:Set(entry.value)
-                elseif opt.Type == "ColorPicker" and entry.value then
-                    opt:Set(Color3.new(entry.value[1], entry.value[2], entry.value[3]))
-                elseif opt.Type == "Keybind" and entry.value then
-                    local key = Enum.KeyCode[entry.value] or Enum.KeyCode.Unknown
-                    opt:Set(key, entry.mode)
+    if data.options then
+        for _, e in ipairs(data.options) do
+            local opt = self._options[e.id]
+            if opt and opt.Set then
+                if opt.Type == "Toggle" and e.value ~= nil then opt:Set(e.value)
+                elseif opt.Type == "Slider" and e.value then opt:Set(e.value)
+                elseif opt.Type == "Dropdown" and e.value then opt:Set(e.value)
+                elseif opt.Type == "ColorPicker" and e.value then opt:Set(Color3.new(e.value[1], e.value[2], e.value[3]))
+                elseif opt.Type == "Keybind" and e.value then
+                    opt:Set(Enum.KeyCode[e.value] or Enum.KeyCode.Unknown, e.mode)
                 end
             end
         end
     end
-
-    -- load module states
-    if saveData.modules then
-        for _, ms in ipairs(saveData.modules) do
-            for _, mod in ipairs(self._allModules) do
-                if mod._fullId == ms.name then
-                    mod:SetEnabled(ms.enabled)
-                    if ms.bindKey then
-                        mod._bindKey = Enum.KeyCode[ms.bindKey] or Enum.KeyCode.Unknown
-                    end
-                    mod._bindMode = ms.bindMode or "toggle"
-                    if mod._updateBindDisplay then mod:_updateBindDisplay() end
+    if data.modules then
+        for _, ms in ipairs(data.modules) do
+            for _, m in ipairs(self._modules) do
+                if m._id == ms.id then
+                    m:SetEnabled(ms.enabled or false)
+                    if ms.bindKey then m._bindKey = Enum.KeyCode[ms.bindKey] or Enum.KeyCode.Unknown end
+                    m._bindMode = ms.bindMode or "toggle"
+                    m:_updateBind()
                 end
             end
         end
     end
-
     return true
 end
 
 function Library:DeleteConfig(name)
-    SafeDeleteFile(Library._configFolder .. "/" .. name .. ".json")
+    SafeDelete(CONFIG_FOLDER .. "/" .. name .. ".json")
 end
 
 function Library:GetConfigs()
-    local files = SafeListFiles(Library._configFolder)
-    local configs = {}
+    local files = SafeList(CONFIG_FOLDER)
+    local out = {}
     for _, f in ipairs(files) do
         local n = f:match("([^/\\]+)%.json$")
-        if n then table.insert(configs, n) end
+        if n and n ~= AUTO_CONFIG then table.insert(out, n) end
     end
-    return configs
+    return out
 end
 
--- ═══════════════════════════════════
+function Library:AutoSave()
+    self:SaveConfig(AUTO_CONFIG)
+end
+
+-- ═══════════════════════════════
+-- UNLOAD
+-- ═══════════════════════════════
+function Library:Unload()
+    self._unloaded = true
+    -- auto save before unloading
+    self:AutoSave()
+    -- disable all modules
+    for _, m in ipairs(self._modules) do
+        m:SetEnabled(false)
+    end
+    -- disconnect
+    for _, c in ipairs(self._connections) do
+        pcall(function() c:Disconnect() end)
+    end
+    task.wait(0.1)
+    self.Gui:Destroy()
+end
+
+-- ═══════════════════════════════
 -- CATEGORY
--- ═══════════════════════════════════
+-- ═══════════════════════════════
 function Library:Category(name)
     local cat = { Name = name, Modules = {}, Library = self }
-    local catIdx = #self.Categories + 1
+    local idx = #self.Categories + 1
 
     cat.Frame = Create("Frame", {
         Name = "Cat_" .. name,
@@ -456,38 +451,22 @@ function Library:Category(name)
         BorderSizePixel = 0,
         Size = UDim2.new(0, 200, 0, 40),
         AutomaticSize = Enum.AutomaticSize.Y,
-        LayoutOrder = catIdx,
+        LayoutOrder = idx,
     })
     Create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = cat.Frame })
     Create("UIStroke", { Color = Theme.CategoryBorder, Thickness = 1, Transparency = 0.4, Parent = cat.Frame })
 
-    -- internal layout
-    local innerFrame = Create("Frame", {
-        Name = "Inner",
+    local inner = Create("Frame", {
         Parent = cat.Frame,
         BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
     })
+    Create("UIListLayout", { Parent = inner, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 0) })
+    Create("UIPadding", { Parent = inner, PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 8), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12) })
 
-    Create("UIListLayout", {
-        Parent = innerFrame,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 0),
-    })
-
-    Create("UIPadding", {
-        Parent = innerFrame,
-        PaddingTop = UDim.new(0, 10),
-        PaddingBottom = UDim.new(0, 8),
-        PaddingLeft = UDim.new(0, 12),
-        PaddingRight = UDim.new(0, 12),
-    })
-
-    -- header
     Create("TextLabel", {
-        Name = "Header",
-        Parent = innerFrame,
+        Parent = inner,
         BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, 22),
         Font = Theme.FontBold,
@@ -498,82 +477,53 @@ function Library:Category(name)
         LayoutOrder = 0,
     })
 
-    -- separator
-    local sepWrap = Create("Frame", {
-        Parent = innerFrame,
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 6),
-        LayoutOrder = 1,
-    })
-    Create("Frame", {
-        Parent = sepWrap,
-        BackgroundColor3 = Theme.Separator,
-        BackgroundTransparency = 0.5,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0, 0, 0.5, 0),
-        Size = UDim2.new(1, 0, 0, 1),
-    })
+    local sepW = Create("Frame", { Parent = inner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 6), LayoutOrder = 1 })
+    Create("Frame", { Parent = sepW, BackgroundColor3 = Theme.Separator, BackgroundTransparency = 0.5, BorderSizePixel = 0, Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.new(1, 0, 0, 1) })
 
-    -- module list
-    cat.ModuleList = Create("Frame", {
-        Name = "ModList",
-        Parent = innerFrame,
+    cat.ModList = Create("Frame", {
+        Parent = inner,
         BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         LayoutOrder = 2,
     })
+    Create("UIListLayout", { Parent = cat.ModList, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 0) })
 
-    Create("UIListLayout", {
-        Parent = cat.ModuleList,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 0),
-    })
-
-    cat._innerFrame = innerFrame
-
-    function cat:Module(moduleName)
-        return Library._CreateModule(self, moduleName)
-    end
+    function cat:Module(n) return Library._Module(self, n) end
 
     table.insert(self.Categories, cat)
     return cat
 end
 
--- ═══════════════════════════════════
+-- ═══════════════════════════════
 -- MODULE
--- ═══════════════════════════════════
-function Library._CreateModule(cat, moduleName)
+-- ═══════════════════════════════
+function Library._Module(cat, name)
     local lib = cat.Library
     local mod = {
-        Name = moduleName,
+        Name = name,
         Enabled = false,
         Expanded = false,
-        Options = {},
-        Category = cat,
-        Callback = nil,
+        _opts = {},
+        _optCount = 0,
         _bindKey = nil,
         _bindMode = "toggle",
-        _fullId = cat.Name .. "." .. moduleName,
-        _optionCount = 0,
-        _expandedHeight = 0,
+        _id = cat.Name .. "." .. name,
+        Callback = nil,
     }
 
-    local modIdx = #cat.Modules + 1
+    local mi = #cat.Modules + 1
 
-    -- container
     mod.Container = Create("Frame", {
-        Name = "Mod_" .. moduleName,
-        Parent = cat.ModuleList,
+        Name = "M_" .. name,
+        Parent = cat.ModList,
         BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, 26),
-        LayoutOrder = modIdx,
+        LayoutOrder = mi,
         ClipsDescendants = true,
     })
 
-    -- header button
-    mod.HeaderBtn = Create("TextButton", {
-        Name = "Header",
+    mod.Btn = Create("TextButton", {
         Parent = mod.Container,
         BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, 26),
@@ -581,25 +531,23 @@ function Library._CreateModule(cat, moduleName)
         AutoButtonColor = false,
     })
 
-    -- name
     mod.NameLabel = Create("TextLabel", {
-        Parent = mod.HeaderBtn,
+        Parent = mod.Btn,
         BackgroundTransparency = 1,
         Position = UDim2.new(0, 0, 0, 0),
         Size = UDim2.new(1, -70, 1, 0),
         Font = Theme.FontSemi,
-        Text = string.lower(moduleName),
+        Text = string.lower(name),
         TextColor3 = Theme.ModuleDisabled,
         TextSize = 13,
         TextXAlignment = Enum.TextXAlignment.Left,
     })
 
-    -- bind label (far right)
     mod.BindLabel = Create("TextLabel", {
-        Parent = mod.HeaderBtn,
+        Parent = mod.Btn,
         BackgroundTransparency = 1,
-        Position = UDim2.new(1, -65, 0, 0),
-        Size = UDim2.new(0, 62, 1, 0),
+        Position = UDim2.new(1, -68, 0, 0),
+        Size = UDim2.new(0, 65, 1, 0),
         Font = Theme.Font,
         Text = "",
         TextColor3 = Theme.BindText,
@@ -607,9 +555,7 @@ function Library._CreateModule(cat, moduleName)
         TextXAlignment = Enum.TextXAlignment.Right,
     })
 
-    -- options frame (starts at height 0, animated)
-    mod.OptionsFrame = Create("Frame", {
-        Name = "Opts",
+    mod.OptsFrame = Create("Frame", {
         Parent = mod.Container,
         BackgroundTransparency = 1,
         Position = UDim2.new(0, 8, 0, 26),
@@ -617,38 +563,27 @@ function Library._CreateModule(cat, moduleName)
         ClipsDescendants = true,
     })
 
-    -- accent bar
     mod.AccentBar = Create("Frame", {
-        Parent = mod.OptionsFrame,
-        BackgroundColor3 = Theme.AccentPink,
+        Parent = mod.OptsFrame,
+        BackgroundColor3 = Theme.Accent,
         BackgroundTransparency = 0.55,
         BorderSizePixel = 0,
         Position = UDim2.new(0, 0, 0, 2),
         Size = UDim2.new(0, 2, 1, -4),
     })
+    lib:_trackAccent(mod.AccentBar, "BackgroundColor3")
 
-    mod.OptionsInner = Create("Frame", {
-        Parent = mod.OptionsFrame,
+    mod.OptsInner = Create("Frame", {
+        Parent = mod.OptsFrame,
         BackgroundTransparency = 1,
         Position = UDim2.new(0, 12, 0, 0),
         Size = UDim2.new(1, -16, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
     })
+    mod.OptsLayout = Create("UIListLayout", { Parent = mod.OptsInner, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 3) })
+    Create("UIPadding", { Parent = mod.OptsInner, PaddingTop = UDim.new(0, 4), PaddingBottom = UDim.new(0, 8) })
 
-    mod.OptionsLayout = Create("UIListLayout", {
-        Parent = mod.OptionsInner,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 3),
-    })
-
-    Create("UIPadding", {
-        Parent = mod.OptionsInner,
-        PaddingTop = UDim.new(0, 4),
-        PaddingBottom = UDim.new(0, 8),
-    })
-
-    -- update bind display
-    function mod:_updateBindDisplay()
+    function mod:_updateBind()
         if self._bindKey and self._bindKey ~= Enum.KeyCode.Unknown then
             self.BindLabel.Text = "[" .. self._bindKey.Name .. "]"
         else
@@ -656,121 +591,64 @@ function Library._CreateModule(cat, moduleName)
         end
     end
 
-    -- set enabled
     function mod:SetEnabled(state)
         self.Enabled = state
-        if state then
-            Tween(self.NameLabel, 0.15, { TextColor3 = Theme.ModuleEnabled })
-        else
-            Tween(self.NameLabel, 0.15, { TextColor3 = Theme.ModuleDisabled })
-        end
+        Tween(self.NameLabel, 0.15, { TextColor3 = state and Theme.Accent or Theme.ModuleDisabled })
         if self.Callback then self.Callback(state) end
     end
 
-    -- smooth expand/collapse
-    local function recalcHeight()
+    local function recalc()
         task.defer(function()
-            local h = mod.OptionsLayout.AbsoluteContentSize.Y + 12
-            mod._expandedHeight = h
             if mod.Expanded then
-                Tween(mod.OptionsFrame, 0.3, { Size = UDim2.new(1, -8, 0, h) }, Enum.EasingStyle.Quart)
+                local h = mod.OptsLayout.AbsoluteContentSize.Y + 12
+                Tween(mod.OptsFrame, 0.3, { Size = UDim2.new(1, -8, 0, h) }, Enum.EasingStyle.Quart)
                 Tween(mod.Container, 0.3, { Size = UDim2.new(1, 0, 0, 26 + h) }, Enum.EasingStyle.Quart)
             end
         end)
     end
 
-    -- left click toggle
-    mod.HeaderBtn.MouseButton1Click:Connect(function()
-        mod:SetEnabled(not mod.Enabled)
-    end)
+    mod.Btn.MouseButton1Click:Connect(function() mod:SetEnabled(not mod.Enabled) end)
 
-    -- right click expand with smooth animation
-    mod.HeaderBtn.MouseButton2Click:Connect(function()
-        if mod._optionCount == 0 then return end
+    mod.Btn.MouseButton2Click:Connect(function()
+        if mod._optCount == 0 then return end
         mod.Expanded = not mod.Expanded
         if mod.Expanded then
-            local h = mod.OptionsLayout.AbsoluteContentSize.Y + 12
-            mod._expandedHeight = h
-            Tween(mod.OptionsFrame, 0.3, { Size = UDim2.new(1, -8, 0, h) }, Enum.EasingStyle.Quart)
+            local h = mod.OptsLayout.AbsoluteContentSize.Y + 12
+            Tween(mod.OptsFrame, 0.3, { Size = UDim2.new(1, -8, 0, h) }, Enum.EasingStyle.Quart)
             Tween(mod.Container, 0.3, { Size = UDim2.new(1, 0, 0, 26 + h) }, Enum.EasingStyle.Quart)
         else
-            Tween(mod.OptionsFrame, 0.25, { Size = UDim2.new(1, -8, 0, 0) }, Enum.EasingStyle.Quart)
+            lib:_closeActivePopup()
+            Tween(mod.OptsFrame, 0.25, { Size = UDim2.new(1, -8, 0, 0) }, Enum.EasingStyle.Quart)
             Tween(mod.Container, 0.25, { Size = UDim2.new(1, 0, 0, 26) }, Enum.EasingStyle.Quart)
         end
     end)
 
-    -- hover
-    mod.HeaderBtn.MouseEnter:Connect(function()
-        if not mod.Enabled then
-            Tween(mod.NameLabel, 0.08, { TextColor3 = Color3.fromRGB(225, 225, 235) })
-        end
+    mod.Btn.MouseEnter:Connect(function()
+        if not mod.Enabled then Tween(mod.NameLabel, 0.08, { TextColor3 = Color3.fromRGB(225, 225, 235) }) end
     end)
-    mod.HeaderBtn.MouseLeave:Connect(function()
-        if not mod.Enabled then
-            Tween(mod.NameLabel, 0.08, { TextColor3 = Theme.ModuleDisabled })
-        end
+    mod.Btn.MouseLeave:Connect(function()
+        if not mod.Enabled then Tween(mod.NameLabel, 0.08, { TextColor3 = Theme.ModuleDisabled }) end
     end)
 
-    -- ═══════════════════════════════
-    -- MODULE API
-    -- ═══════════════════════════════
-    function mod:OnToggle(cb)
-        self.Callback = cb
-        return self
-    end
-
-    -- helper for option registration
-    local function regOpt(opt, id)
-        mod._optionCount = mod._optionCount + 1
-        lib._allOptions[id] = opt
-        -- recalc after adding
-        task.defer(recalcHeight)
-    end
+    function mod:OnToggle(cb) self.Callback = cb; return self end
 
     -- ─── TOGGLE ───
-    function mod:Toggle(name, default, callback)
-        local id = self._fullId .. "." .. name
-        local opt = { Type = "Toggle", Value = default or false, Name = name, Callback = callback }
+    function mod:Toggle(tname, default, callback)
+        local id = self._id .. "." .. tname
+        local opt = { Type = "Toggle", Value = default or false, Callback = callback }
+        self._optCount = self._optCount + 1
 
-        local row = Create("Frame", {
-            Parent = self.OptionsInner,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 22),
-            LayoutOrder = self._optionCount + 1,
-        })
+        local row = Create("Frame", { Parent = self.OptsInner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), LayoutOrder = self._optCount })
+        Create("TextLabel", { Parent = row, BackgroundTransparency = 1, Size = UDim2.new(1, -44, 1, 0), Font = Theme.Font, Text = tname, TextColor3 = Theme.OptionText, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left })
 
-        Create("TextLabel", {
-            Parent = row,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, -44, 1, 0),
-            Font = Theme.Font,
-            Text = name,
-            TextColor3 = Theme.OptionText,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-
-        local bg = Create("Frame", {
-            Parent = row,
-            BackgroundColor3 = opt.Value and Theme.ToggleOn or Theme.ToggleOff,
-            BorderSizePixel = 0,
-            Position = UDim2.new(1, -36, 0.5, -7),
-            Size = UDim2.new(0, 30, 0, 14),
-        })
+        local bg = Create("Frame", { Parent = row, BackgroundColor3 = opt.Value and Theme.ToggleOn or Theme.ToggleOff, BorderSizePixel = 0, Position = UDim2.new(1, -36, 0.5, -7), Size = UDim2.new(0, 30, 0, 14) })
         Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = bg })
+        if opt.Value then lib:_trackAccent(bg, "BackgroundColor3") end
 
-        local knob = Create("Frame", {
-            Parent = bg,
-            BackgroundColor3 = Theme.Knob,
-            BorderSizePixel = 0,
-            Position = opt.Value and UDim2.new(1, -13, 0.5, -5) or UDim2.new(0, 2, 0.5, -5),
-            Size = UDim2.new(0, 10, 0, 10),
-        })
+        local knob = Create("Frame", { Parent = bg, BackgroundColor3 = Theme.Knob, BorderSizePixel = 0, Position = opt.Value and UDim2.new(1, -13, 0.5, -5) or UDim2.new(0, 2, 0.5, -5), Size = UDim2.new(0, 10, 0, 10) })
         Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
 
-        local btn = Create("TextButton", {
-            Parent = row, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Text = "", ZIndex = 5,
-        })
+        local btn = Create("TextButton", { Parent = row, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Text = "", ZIndex = 5 })
 
         function opt:Set(val)
             opt.Value = val
@@ -784,368 +662,214 @@ function Library._CreateModule(cat, moduleName)
             if opt.Callback then opt.Callback(val) end
         end
 
-        btn.MouseButton1Click:Connect(function()
-            opt:Set(not opt.Value)
-        end)
+        btn.MouseButton1Click:Connect(function() opt:Set(not opt.Value) end)
 
-        table.insert(self.Options, opt)
-        regOpt(opt, id)
+        lib._options[id] = opt
+        table.insert(self._opts, opt)
+        task.defer(recalc)
         return opt
     end
 
     -- ─── SLIDER ───
-    function mod:Slider(name, default, min, max, callback, suffix, decimals)
-        suffix = suffix or ""
-        decimals = decimals or 1
-        default = default or min
-        local id = self._fullId .. "." .. name
-        local opt = { Type = "Slider", Value = default, Name = name, Callback = callback }
+    function mod:Slider(sname, default, min, max, callback, suffix, decimals)
+        suffix = suffix or ""; decimals = decimals or 1; default = default or min
+        local id = self._id .. "." .. sname
+        local opt = { Type = "Slider", Value = default, Callback = callback }
+        self._optCount = self._optCount + 1
 
-        local row = Create("Frame", {
-            Parent = self.OptionsInner,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 34),
-            LayoutOrder = self._optionCount + 1,
-        })
+        local row = Create("Frame", { Parent = self.OptsInner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 34), LayoutOrder = self._optCount })
+        Create("TextLabel", { Parent = row, BackgroundTransparency = 1, Size = UDim2.new(0.6, 0, 0, 15), Font = Theme.Font, Text = sname, TextColor3 = Theme.OptionText, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left })
+        local vl = Create("TextLabel", { Parent = row, BackgroundTransparency = 1, Position = UDim2.new(0.6, 0, 0, 0), Size = UDim2.new(0.4, 0, 0, 15), Font = Theme.FontSemi, Text = tostring(default) .. suffix, TextColor3 = Theme.OptionValue, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right })
 
-        Create("TextLabel", {
-            Parent = row,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(0.6, 0, 0, 15),
-            Font = Theme.Font,
-            Text = name,
-            TextColor3 = Theme.OptionText,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
-
-        local valLabel = Create("TextLabel", {
-            Parent = row,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0.6, 0, 0, 0),
-            Size = UDim2.new(0.4, 0, 0, 15),
-            Font = Theme.FontSemi,
-            Text = tostring(default) .. suffix,
-            TextColor3 = Theme.OptionValue,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Right,
-        })
-
-        local track = Create("Frame", {
-            Parent = row,
-            BackgroundColor3 = Theme.SliderBg,
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, 0, 0, 19),
-            Size = UDim2.new(1, 0, 0, 5),
-        })
+        local track = Create("Frame", { Parent = row, BackgroundColor3 = Theme.SliderBg, BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 19), Size = UDim2.new(1, 0, 0, 5) })
         Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = track })
 
         local pct = math.clamp((default - min) / (max - min), 0, 1)
-        local fill = Create("Frame", {
-            Parent = track,
-            BackgroundColor3 = Theme.SliderFill,
-            BorderSizePixel = 0,
-            Size = UDim2.new(pct, 0, 1, 0),
-        })
+        local fill = Create("Frame", { Parent = track, BackgroundColor3 = Theme.Accent, BorderSizePixel = 0, Size = UDim2.new(pct, 0, 1, 0) })
         Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = fill })
+        lib:_trackAccent(fill, "BackgroundColor3")
 
-        local knob = Create("Frame", {
-            Parent = track,
-            BackgroundColor3 = Theme.Knob,
-            BorderSizePixel = 0,
-            Position = UDim2.new(pct, -5, 0.5, -5),
-            Size = UDim2.new(0, 10, 0, 10),
-            ZIndex = 3,
-        })
+        local knob = Create("Frame", { Parent = track, BackgroundColor3 = Theme.Knob, BorderSizePixel = 0, Position = UDim2.new(pct, -5, 0.5, -5), Size = UDim2.new(0, 10, 0, 10), ZIndex = 3 })
         Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = knob })
 
-        local sliderBtn = Create("TextButton", {
-            Parent = track,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 1, 14),
-            Position = UDim2.new(0, 0, 0, -7),
-            Text = "", ZIndex = 5,
-        })
+        local sb = Create("TextButton", { Parent = track, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 14), Position = UDim2.new(0, 0, 0, -7), Text = "", ZIndex = 5 })
 
         local sliding = false
 
-        local function doUpdate(input)
+        local function upd(input)
             local p = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-            local raw = min + (max - min) * p
-            local val = math.floor(raw * (10 ^ decimals) + 0.5) / (10 ^ decimals)
-            opt.Value = val
-            valLabel.Text = tostring(val) .. suffix
-            fill.Size = UDim2.new(p, 0, 1, 0)
-            knob.Position = UDim2.new(p, -5, 0.5, -5)
+            local val = math.floor((min + (max - min) * p) * (10 ^ decimals) + 0.5) / (10 ^ decimals)
+            opt.Value = val; vl.Text = tostring(val) .. suffix
+            fill.Size = UDim2.new(p, 0, 1, 0); knob.Position = UDim2.new(p, -5, 0.5, -5)
             if callback then callback(val) end
         end
 
         function opt:Set(val)
             val = math.clamp(val, min, max)
             local p = (val - min) / (max - min)
-            opt.Value = val
-            valLabel.Text = tostring(val) .. suffix
-            fill.Size = UDim2.new(p, 0, 1, 0)
-            knob.Position = UDim2.new(p, -5, 0.5, -5)
+            opt.Value = val; vl.Text = tostring(val) .. suffix
+            fill.Size = UDim2.new(p, 0, 1, 0); knob.Position = UDim2.new(p, -5, 0.5, -5)
             if callback then callback(val) end
         end
 
-        sliderBtn.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                sliding = true
-                doUpdate(input)
-            end
+        sb.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then sliding = true; upd(input) end
         end)
-        UserInputService.InputEnded:Connect(function(input)
+        table.insert(lib._connections, UserInputService.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then sliding = false end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
-            if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then doUpdate(input) end
-        end)
+        end))
+        table.insert(lib._connections, UserInputService.InputChanged:Connect(function(input)
+            if sliding and input.UserInputType == Enum.UserInputType.MouseMovement then upd(input) end
+        end))
 
-        table.insert(self.Options, opt)
-        regOpt(opt, id)
+        lib._options[id] = opt
+        table.insert(self._opts, opt)
+        task.defer(recalc)
         return opt
     end
 
-    -- ─── DROPDOWN ───
-    function mod:Dropdown(name, items, default, callback)
-        local id = self._fullId .. "." .. name
-        local opt = { Type = "Dropdown", Value = default or items[1], Items = items, Name = name, Callback = callback }
-        local dropOpen = false
+    -- ─── DROPDOWN (popup on screen level) ───
+    function mod:Dropdown(dname, items, default, callback)
+        local id = self._id .. "." .. dname
+        local opt = { Type = "Dropdown", Value = default or items[1], Items = items, Callback = callback }
+        self._optCount = self._optCount + 1
 
-        local row = Create("Frame", {
-            Parent = self.OptionsInner,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 22),
-            LayoutOrder = self._optionCount + 1,
-            ClipsDescendants = false,
-        })
-
-        Create("TextLabel", {
-            Parent = row,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(0.5, 0, 0, 22),
-            Font = Theme.Font,
-            Text = name,
-            TextColor3 = Theme.OptionText,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
+        local row = Create("Frame", { Parent = self.OptsInner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), LayoutOrder = self._optCount })
+        Create("TextLabel", { Parent = row, BackgroundTransparency = 1, Size = UDim2.new(0.5, 0, 1, 0), Font = Theme.Font, Text = dname, TextColor3 = Theme.OptionText, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left })
 
         local valBtn = Create("TextButton", {
-            Parent = row,
-            BackgroundTransparency = 1,
-            Position = UDim2.new(0.5, 0, 0, 0),
-            Size = UDim2.new(0.5, 0, 0, 22),
-            Font = Theme.FontSemi,
-            Text = tostring(opt.Value),
-            TextColor3 = Theme.OptionValue,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Right,
-            AutoButtonColor = false,
+            Parent = row, BackgroundTransparency = 1, Position = UDim2.new(0.5, 0, 0, 0),
+            Size = UDim2.new(0.5, 0, 1, 0), Font = Theme.FontSemi, Text = tostring(opt.Value),
+            TextColor3 = Theme.OptionValue, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right, AutoButtonColor = false,
         })
 
-        -- dropdown list (absolute positioned to not affect layout)
-        local dropFrame = Create("Frame", {
-            Parent = row,
+        -- popup frame (on popup layer)
+        local popFrame = Create("Frame", {
+            Parent = lib.PopupLayer,
             BackgroundColor3 = Theme.DropBg,
             BorderSizePixel = 0,
-            Position = UDim2.new(0.3, 0, 0, 24),
-            Size = UDim2.new(0.7, 0, 0, 0),
+            Size = UDim2.new(0, 120, 0, 0),
             ClipsDescendants = true,
             Visible = false,
-            ZIndex = 50,
+            ZIndex = 110,
         })
-        Create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = dropFrame })
-        Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = dropFrame })
-
-        local dLayout = Create("UIListLayout", {
-            Parent = dropFrame,
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 0),
-        })
-        Create("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2), Parent = dropFrame })
+        Create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = popFrame })
+        Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = popFrame })
+        local pLayout = Create("UIListLayout", { Parent = popFrame, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 0) })
+        Create("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2), Parent = popFrame })
 
         local itemBtns = {}
         for i, item in ipairs(items) do
             local ib = Create("TextButton", {
-                Parent = dropFrame,
-                BackgroundColor3 = Theme.DropBg,
-                BorderSizePixel = 0,
-                Size = UDim2.new(1, 0, 0, 20),
-                Font = Theme.Font,
-                Text = item,
-                TextColor3 = (item == opt.Value) and Theme.AccentPink or Theme.OptionText,
-                TextSize = 11,
-                AutoButtonColor = false,
-                LayoutOrder = i,
-                ZIndex = 51,
+                Parent = popFrame, BackgroundColor3 = Theme.DropBg, BorderSizePixel = 0,
+                Size = UDim2.new(1, 0, 0, 20), Font = Theme.Font, Text = item,
+                TextColor3 = (item == opt.Value) and Theme.Accent or Theme.OptionText,
+                TextSize = 11, AutoButtonColor = false, LayoutOrder = i, ZIndex = 111,
             })
+            if item == opt.Value then lib:_trackAccent(ib, "TextColor3") end
             table.insert(itemBtns, ib)
 
             ib.MouseEnter:Connect(function() Tween(ib, 0.1, { BackgroundColor3 = Theme.DropHover }) end)
             ib.MouseLeave:Connect(function() Tween(ib, 0.1, { BackgroundColor3 = Theme.DropBg }) end)
 
             ib.MouseButton1Click:Connect(function()
-                opt.Value = item
-                valBtn.Text = item
-                for _, b in ipairs(itemBtns) do
-                    b.TextColor3 = (b.Text == item) and Theme.AccentPink or Theme.OptionText
-                end
-                dropOpen = false
-                Tween(dropFrame, 0.2, { Size = UDim2.new(0.7, 0, 0, 0) }, Enum.EasingStyle.Quart)
-                task.delay(0.2, function() dropFrame.Visible = false end)
+                opt.Value = item; valBtn.Text = item
+                for _, b in ipairs(itemBtns) do b.TextColor3 = (b.Text == item) and Theme.Accent or Theme.OptionText end
+                lib:_closeActivePopup()
                 if callback then callback(item) end
             end)
         end
 
         function opt:Set(val)
-            opt.Value = val
-            valBtn.Text = val
-            for _, b in ipairs(itemBtns) do
-                b.TextColor3 = (b.Text == val) and Theme.AccentPink or Theme.OptionText
-            end
+            opt.Value = val; valBtn.Text = val
+            for _, b in ipairs(itemBtns) do b.TextColor3 = (b.Text == val) and Theme.Accent or Theme.OptionText end
             if callback then callback(val) end
         end
 
         valBtn.MouseButton1Click:Connect(function()
-            dropOpen = not dropOpen
-            if dropOpen then
-                dropFrame.Visible = true
-                local h = #items * 20 + 4
-                Tween(dropFrame, 0.25, { Size = UDim2.new(0.7, 0, 0, h) }, Enum.EasingStyle.Quart)
-            else
-                Tween(dropFrame, 0.2, { Size = UDim2.new(0.7, 0, 0, 0) }, Enum.EasingStyle.Quart)
-                task.delay(0.2, function() dropFrame.Visible = false end)
+            if lib._activePopup and lib._activePopup.frame == popFrame then
+                lib:_closeActivePopup()
+                return
             end
+            local absPos = valBtn.AbsolutePosition
+            local absSize = valBtn.AbsoluteSize
+            popFrame.Position = UDim2.new(0, absPos.X, 0, absPos.Y + absSize.Y + 2)
+            popFrame.Size = UDim2.new(0, math.max(absSize.X, 100), 0, 0)
+            popFrame.Visible = true
+            local targetH = #items * 20 + 4
+            Tween(popFrame, 0.2, { Size = UDim2.new(0, math.max(absSize.X, 100), 0, targetH) }, Enum.EasingStyle.Quart)
+
+            lib:_openPopup({
+                frame = popFrame,
+                close = function()
+                    Tween(popFrame, 0.15, { Size = UDim2.new(0, popFrame.AbsoluteSize.X, 0, 0) }, Enum.EasingStyle.Quart)
+                    task.delay(0.15, function() popFrame.Visible = false end)
+                end,
+            })
         end)
 
-        table.insert(self.Options, opt)
-        regOpt(opt, id)
+        lib._options[id] = opt
+        table.insert(self._opts, opt)
+        task.defer(recalc)
         return opt
     end
 
-    -- ─── COLOR PICKER (FIXED) ───
-    function mod:ColorPicker(name, default, callback)
+    -- ─── COLOR PICKER (popup on screen level) ───
+    function mod:ColorPicker(cname, default, callback)
         default = default or Color3.new(1, 0, 0)
         local h, s, v = HSVfromRGB(default)
-        local id = self._fullId .. "." .. name
-        local opt = { Type = "ColorPicker", Value = default, Name = name, Callback = callback }
-        local pickerOpen = false
+        local id = self._id .. "." .. cname
+        local opt = { Type = "ColorPicker", Value = default, Callback = callback }
+        self._optCount = self._optCount + 1
 
-        local row = Create("Frame", {
-            Parent = self.OptionsInner,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 22),
-            LayoutOrder = self._optionCount + 1,
-            ClipsDescendants = false,
-        })
-
-        Create("TextLabel", {
-            Parent = row,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, -28, 0, 22),
-            Font = Theme.Font,
-            Text = name,
-            TextColor3 = Theme.OptionText,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
+        local row = Create("Frame", { Parent = self.OptsInner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), LayoutOrder = self._optCount })
+        Create("TextLabel", { Parent = row, BackgroundTransparency = 1, Size = UDim2.new(1, -28, 0, 22), Font = Theme.Font, Text = cname, TextColor3 = Theme.OptionText, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left })
 
         local preview = Create("TextButton", {
-            Parent = row,
-            BackgroundColor3 = default,
-            BorderSizePixel = 0,
-            Position = UDim2.new(1, -20, 0.5, -6),
-            Size = UDim2.new(0, 16, 0, 12),
-            Text = "",
-            AutoButtonColor = false,
+            Parent = row, BackgroundColor3 = default, BorderSizePixel = 0,
+            Position = UDim2.new(1, -20, 0.5, -6), Size = UDim2.new(0, 16, 0, 12),
+            Text = "", AutoButtonColor = false,
         })
         Create("UICorner", { CornerRadius = UDim.new(0, 3), Parent = preview })
         Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = preview })
 
-        -- picker panel (absolute)
+        -- popup picker
         local panel = Create("Frame", {
-            Parent = row,
+            Parent = lib.PopupLayer,
             BackgroundColor3 = Theme.PickerBg,
             BorderSizePixel = 0,
-            Position = UDim2.new(0, 0, 0, 24),
-            Size = UDim2.new(1, 0, 0, 0),
-            ClipsDescendants = true,
+            Size = UDim2.new(0, 180, 0, 100),
             Visible = false,
-            ZIndex = 50,
+            ZIndex = 110,
         })
-        Create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = panel })
+        Create("UICorner", { CornerRadius = UDim.new(0, 5), Parent = panel })
         Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = panel })
 
-        -- SV box - FIXED: proper white corner
+        -- SV box
         local svBox = Create("Frame", {
-            Parent = panel,
-            BackgroundColor3 = Color3.new(1, 1, 1), -- start white
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, 6, 0, 6),
-            Size = UDim2.new(1, -28, 0, 80),
-            ZIndex = 51,
-            ClipsDescendants = true,
+            Parent = panel, BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0,
+            Position = UDim2.new(0, 8, 0, 8), Size = UDim2.new(1, -32, 1, -16),
+            ZIndex = 111, ClipsDescendants = true,
         })
         Create("UICorner", { CornerRadius = UDim.new(0, 3), Parent = svBox })
 
-        -- hue color overlay (left=white, right=hue color)
-        local hueOverlay = Create("Frame", {
-            Parent = svBox,
-            BackgroundColor3 = Color3.fromHSV(h, 1, 1),
-            Size = UDim2.new(1, 0, 1, 0),
-            ZIndex = 52,
-        })
-        Create("UIGradient", {
-            Parent = hueOverlay,
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(1, 0),
-            }),
-        })
+        local hueOv = Create("Frame", { Parent = svBox, BackgroundColor3 = Color3.fromHSV(h, 1, 1), Size = UDim2.new(1, 0, 1, 0), ZIndex = 112 })
+        Create("UIGradient", { Parent = hueOv, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) }) })
 
-        -- black overlay (bottom = black)
-        local blackOverlay = Create("Frame", {
-            Parent = svBox,
-            BackgroundColor3 = Color3.new(0, 0, 0),
-            Size = UDim2.new(1, 0, 1, 0),
-            ZIndex = 53,
-        })
-        Create("UIGradient", {
-            Parent = blackOverlay,
-            Transparency = NumberSequence.new({
-                NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(1, 0),
-            }),
-            Rotation = 90,
-        })
+        local blackOv = Create("Frame", { Parent = svBox, BackgroundColor3 = Color3.new(0, 0, 0), Size = UDim2.new(1, 0, 1, 0), ZIndex = 113 })
+        Create("UIGradient", { Parent = blackOv, Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) }), Rotation = 90 })
 
-        -- cursor
-        local svCursor = Create("Frame", {
-            Parent = svBox,
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            BorderSizePixel = 0,
-            Position = UDim2.new(s, -5, 1 - v, -5),
-            Size = UDim2.new(0, 10, 0, 10),
-            ZIndex = 56,
-        })
-        Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = svCursor })
-        Create("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 1.5, Parent = svCursor })
+        local svCur = Create("Frame", { Parent = svBox, BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Position = UDim2.new(s, -5, 1 - v, -5), Size = UDim2.new(0, 10, 0, 10), ZIndex = 116 })
+        Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = svCur })
+        Create("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 1.5, Parent = svCur })
 
-        -- hue bar
-        local hueBar = Create("Frame", {
-            Parent = panel,
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            BorderSizePixel = 0,
-            Position = UDim2.new(1, -18, 0, 6),
-            Size = UDim2.new(0, 10, 0, 80),
-            ZIndex = 51,
-        })
+        local svBtn = Create("TextButton", { Parent = svBox, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Text = "", ZIndex = 117 })
+
+        -- Hue bar
+        local hueBar = Create("Frame", { Parent = panel, BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Position = UDim2.new(1, -20, 0, 8), Size = UDim2.new(0, 10, 1, -16), ZIndex = 111 })
         Create("UICorner", { CornerRadius = UDim.new(0, 3), Parent = hueBar })
         Create("UIGradient", {
-            Parent = hueBar,
+            Parent = hueBar, Rotation = 90,
             Color = ColorSequence.new({
                 ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
                 ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
@@ -1155,29 +879,22 @@ function Library._CreateModule(cat, moduleName)
                 ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0, 255)),
                 ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0)),
             }),
-            Rotation = 90,
         })
 
-        local hueCursor = Create("Frame", {
-            Parent = hueBar,
-            BackgroundColor3 = Color3.new(1, 1, 1),
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, -2, h, -2),
-            Size = UDim2.new(1, 4, 0, 4),
-            ZIndex = 56,
-        })
-        Create("UICorner", { CornerRadius = UDim.new(0, 2), Parent = hueCursor })
-        Create("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 1, Parent = hueCursor })
+        local hueCur = Create("Frame", { Parent = hueBar, BackgroundColor3 = Color3.new(1, 1, 1), BorderSizePixel = 0, Position = UDim2.new(0, -2, h, -2), Size = UDim2.new(1, 4, 0, 4), ZIndex = 116 })
+        Create("UICorner", { CornerRadius = UDim.new(0, 2), Parent = hueCur })
+        Create("UIStroke", { Color = Color3.new(0, 0, 0), Thickness = 1, Parent = hueCur })
 
-        local svBtn = Create("TextButton", { Parent = svBox, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Text = "", ZIndex = 57 })
-        local hueBtn = Create("TextButton", { Parent = hueBar, BackgroundTransparency = 1, Size = UDim2.new(1, 8, 1, 0), Position = UDim2.new(0, -4, 0, 0), Text = "", ZIndex = 57 })
+        local hueBtn = Create("TextButton", { Parent = hueBar, BackgroundTransparency = 1, Size = UDim2.new(1, 8, 1, 0), Position = UDim2.new(0, -4, 0, 0), Text = "", ZIndex = 117 })
+
+        local dragSV, dragH = false, false
 
         local function updateCol()
-            opt.Value = Color3.fromHSV(h, s, v)
+            opt.Value = Color3.fromHSV(math.clamp(h, 0, 0.999), s, v)
             preview.BackgroundColor3 = opt.Value
-            hueOverlay.BackgroundColor3 = Color3.fromHSV(h, 1, 1)
-            svCursor.Position = UDim2.new(s, -5, 1 - v, -5)
-            hueCursor.Position = UDim2.new(0, -2, h, -2)
+            hueOv.BackgroundColor3 = Color3.fromHSV(math.clamp(h, 0, 0.999), 1, 1)
+            svCur.Position = UDim2.new(s, -5, 1 - v, -5)
+            hueCur.Position = UDim2.new(0, -2, h, -2)
             if callback then callback(opt.Value) end
         end
 
@@ -1186,7 +903,6 @@ function Library._CreateModule(cat, moduleName)
             updateCol()
         end
 
-        local dragSV, dragH = false, false
         svBtn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then
                 dragSV = true
@@ -1202,10 +918,10 @@ function Library._CreateModule(cat, moduleName)
                 updateCol()
             end
         end)
-        UserInputService.InputEnded:Connect(function(input)
+        table.insert(lib._connections, UserInputService.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then dragSV = false; dragH = false end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
+        end))
+        table.insert(lib._connections, UserInputService.InputChanged:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseMovement then
                 if dragSV then
                     s = math.clamp((input.Position.X - svBox.AbsolutePosition.X) / svBox.AbsoluteSize.X, 0, 1)
@@ -1216,350 +932,218 @@ function Library._CreateModule(cat, moduleName)
                     updateCol()
                 end
             end
-        end)
+        end))
 
         preview.MouseButton1Click:Connect(function()
-            pickerOpen = not pickerOpen
-            if pickerOpen then
-                panel.Visible = true
-                Tween(panel, 0.25, { Size = UDim2.new(1, 0, 0, 92) }, Enum.EasingStyle.Quart)
-            else
-                Tween(panel, 0.2, { Size = UDim2.new(1, 0, 0, 0) }, Enum.EasingStyle.Quart)
-                task.delay(0.2, function() panel.Visible = false end)
+            if lib._activePopup and lib._activePopup.frame == panel then
+                lib:_closeActivePopup()
+                return
             end
+            local absPos = preview.AbsolutePosition
+            panel.Position = UDim2.new(0, absPos.X - 160, 0, absPos.Y + 16)
+            panel.Visible = true
+
+            lib:_openPopup({
+                frame = panel,
+                close = function()
+                    panel.Visible = false
+                    dragSV = false; dragH = false
+                end,
+            })
         end)
 
-        table.insert(self.Options, opt)
-        regOpt(opt, id)
+        lib._options[id] = opt
+        table.insert(self._opts, opt)
+        task.defer(recalc)
         return opt
     end
 
-    -- ─── KEYBIND (with bind mode: toggle/hold/always) ───
-    function mod:Keybind(name, default, callback)
-        local id = self._fullId .. "." .. name
+    -- ─── KEYBIND (with right-click mode popup) ───
+    function mod:Keybind(kname, default, callback)
         default = default or Enum.KeyCode.Unknown
-        local opt = { Type = "Keybind", Value = default, Name = name, Mode = "toggle", Callback = callback }
-        local listening = false
+        local id = self._id .. "." .. kname
+        local opt = { Type = "Keybind", Value = default, Mode = "toggle", Callback = callback }
+        self._optCount = self._optCount + 1
 
-        -- set module bind
         mod._bindKey = default
         mod._bindMode = "toggle"
-        mod:_updateBindDisplay()
+        mod:_updateBind()
 
-        local row = Create("Frame", {
-            Parent = self.OptionsInner,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 22),
-            LayoutOrder = self._optionCount + 1,
-            ClipsDescendants = false,
-        })
-
-        Create("TextLabel", {
-            Parent = row,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(0.45, 0, 1, 0),
-            Font = Theme.Font,
-            Text = name,
-            TextColor3 = Theme.OptionText,
-            TextSize = 12,
-            TextXAlignment = Enum.TextXAlignment.Left,
-        })
+        local row = Create("Frame", { Parent = self.OptsInner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 22), LayoutOrder = self._optCount })
+        Create("TextLabel", { Parent = row, BackgroundTransparency = 1, Size = UDim2.new(0.4, 0, 1, 0), Font = Theme.Font, Text = kname, TextColor3 = Theme.OptionText, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left })
 
         local bindBtn = Create("TextButton", {
-            Parent = row,
-            BackgroundColor3 = Theme.DropBg,
-            BorderSizePixel = 0,
-            Position = UDim2.new(1, -55, 0.5, -9),
-            Size = UDim2.new(0, 52, 0, 18),
-            Font = Theme.Font,
-            Text = default ~= Enum.KeyCode.Unknown and default.Name or "none",
-            TextColor3 = Theme.OptionValue,
-            TextSize = 10,
-            AutoButtonColor = false,
+            Parent = row, BackgroundColor3 = Theme.DropBg, BorderSizePixel = 0,
+            Position = UDim2.new(1, -55, 0.5, -9), Size = UDim2.new(0, 52, 0, 18),
+            Font = Theme.Font, Text = default ~= Enum.KeyCode.Unknown and default.Name or "none",
+            TextColor3 = Theme.OptionValue, TextSize = 10, AutoButtonColor = false,
         })
         Create("UICorner", { CornerRadius = UDim.new(0, 3), Parent = bindBtn })
         Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = bindBtn })
 
-        -- mode dropdown (right click on bind button)
+        local listening = false
+
+        -- mode popup
         local modeFrame = Create("Frame", {
-            Parent = row,
+            Parent = lib.PopupLayer,
             BackgroundColor3 = Theme.DropBg,
             BorderSizePixel = 0,
-            Position = UDim2.new(1, -55, 0, 22),
             Size = UDim2.new(0, 80, 0, 0),
             ClipsDescendants = true,
             Visible = false,
-            ZIndex = 60,
+            ZIndex = 110,
         })
         Create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = modeFrame })
         Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = modeFrame })
-
-        local mLayout = Create("UIListLayout", {
-            Parent = modeFrame,
-            SortOrder = Enum.SortOrder.LayoutOrder,
-            Padding = UDim.new(0, 0),
-        })
+        Create("UIListLayout", { Parent = modeFrame, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 0) })
         Create("UIPadding", { PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2), Parent = modeFrame })
 
         local modes = { "toggle", "hold", "always" }
         local modeBtns = {}
         for i, m in ipairs(modes) do
             local mb = Create("TextButton", {
-                Parent = modeFrame,
-                BackgroundColor3 = Theme.DropBg,
-                BorderSizePixel = 0,
-                Size = UDim2.new(1, 0, 0, 20),
-                Font = Theme.Font,
-                Text = m,
-                TextColor3 = (m == opt.Mode) and Theme.AccentPink or Theme.OptionText,
-                TextSize = 11,
-                AutoButtonColor = false,
-                LayoutOrder = i,
-                ZIndex = 61,
+                Parent = modeFrame, BackgroundColor3 = Theme.DropBg, BorderSizePixel = 0,
+                Size = UDim2.new(1, 0, 0, 20), Font = Theme.Font, Text = m,
+                TextColor3 = (m == opt.Mode) and Theme.Accent or Theme.OptionText,
+                TextSize = 11, AutoButtonColor = false, LayoutOrder = i, ZIndex = 111,
             })
             table.insert(modeBtns, mb)
-
             mb.MouseEnter:Connect(function() Tween(mb, 0.1, { BackgroundColor3 = Theme.DropHover }) end)
             mb.MouseLeave:Connect(function() Tween(mb, 0.1, { BackgroundColor3 = Theme.DropBg }) end)
-
             mb.MouseButton1Click:Connect(function()
-                opt.Mode = m
-                mod._bindMode = m
-                for _, b in ipairs(modeBtns) do
-                    b.TextColor3 = (b.Text == m) and Theme.AccentPink or Theme.OptionText
-                end
-                -- close mode dropdown
-                Tween(modeFrame, 0.2, { Size = UDim2.new(0, 80, 0, 0) }, Enum.EasingStyle.Quart)
-                task.delay(0.2, function() modeFrame.Visible = false end)
-                -- if always, enable immediately
-                if m == "always" then
-                    mod:SetEnabled(true)
-                end
+                opt.Mode = m; mod._bindMode = m
+                for _, b in ipairs(modeBtns) do b.TextColor3 = (b.Text == m) and Theme.Accent or Theme.OptionText end
+                lib:_closeActivePopup()
+                if m == "always" then mod:SetEnabled(true) end
             end)
         end
 
-        -- left click: listen for key
+        -- left click: listen
         bindBtn.MouseButton1Click:Connect(function()
             listening = true
             bindBtn.Text = "..."
-            Tween(bindBtn, 0.1, { TextColor3 = Theme.AccentPink })
+            Tween(bindBtn, 0.1, { TextColor3 = Theme.Accent })
         end)
 
-        -- right click: show mode dropdown
+        -- right click: mode popup
         bindBtn.MouseButton2Click:Connect(function()
-            if modeFrame.Visible then
-                Tween(modeFrame, 0.2, { Size = UDim2.new(0, 80, 0, 0) }, Enum.EasingStyle.Quart)
-                task.delay(0.2, function() modeFrame.Visible = false end)
-            else
-                modeFrame.Visible = true
-                Tween(modeFrame, 0.25, { Size = UDim2.new(0, 80, 0, #modes * 20 + 4) }, Enum.EasingStyle.Quart)
+            if lib._activePopup and lib._activePopup.frame == modeFrame then
+                lib:_closeActivePopup(); return
             end
+            local ap = bindBtn.AbsolutePosition
+            local as = bindBtn.AbsoluteSize
+            modeFrame.Position = UDim2.new(0, ap.X, 0, ap.Y + as.Y + 2)
+            modeFrame.Size = UDim2.new(0, 80, 0, 0)
+            modeFrame.Visible = true
+            Tween(modeFrame, 0.2, { Size = UDim2.new(0, 80, 0, #modes * 20 + 4) }, Enum.EasingStyle.Quart)
+            lib:_openPopup({
+                frame = modeFrame,
+                close = function()
+                    Tween(modeFrame, 0.15, { Size = UDim2.new(0, 80, 0, 0) }, Enum.EasingStyle.Quart)
+                    task.delay(0.15, function() modeFrame.Visible = false end)
+                end,
+            })
         end)
 
-        local listenConn
-        listenConn = UserInputService.InputBegan:Connect(function(input, gpe)
+        table.insert(lib._connections, UserInputService.InputBegan:Connect(function(input, gpe)
             if not listening then return end
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 if input.KeyCode == Enum.KeyCode.Escape then
-                    opt.Value = Enum.KeyCode.Unknown
-                    bindBtn.Text = "none"
+                    opt.Value = Enum.KeyCode.Unknown; bindBtn.Text = "none"
                     mod._bindKey = Enum.KeyCode.Unknown
                 else
-                    opt.Value = input.KeyCode
-                    bindBtn.Text = input.KeyCode.Name
+                    opt.Value = input.KeyCode; bindBtn.Text = input.KeyCode.Name
                     mod._bindKey = input.KeyCode
                 end
-                mod:_updateBindDisplay()
+                mod:_updateBind()
                 Tween(bindBtn, 0.1, { TextColor3 = Theme.OptionValue })
                 listening = false
             end
-        end)
+        end))
 
         function opt:Set(key, mode)
-            opt.Value = key
-            mod._bindKey = key
+            opt.Value = key; mod._bindKey = key
             bindBtn.Text = key ~= Enum.KeyCode.Unknown and key.Name or "none"
             if mode then
-                opt.Mode = mode
-                mod._bindMode = mode
-                for _, b in ipairs(modeBtns) do
-                    b.TextColor3 = (b.Text == mode) and Theme.AccentPink or Theme.OptionText
-                end
+                opt.Mode = mode; mod._bindMode = mode
+                for _, b in ipairs(modeBtns) do b.TextColor3 = (b.Text == mode) and Theme.Accent or Theme.OptionText end
             end
-            mod:_updateBindDisplay()
+            mod:_updateBind()
         end
 
-        table.insert(self.Options, opt)
-        regOpt(opt, id)
+        lib._options[id] = opt
+        table.insert(self._opts, opt)
+        task.defer(recalc)
         return opt
     end
 
     -- ─── LABEL ───
     function mod:Label(text)
-        local lbl = Create("TextLabel", {
-            Parent = self.OptionsInner,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 16),
-            Font = Theme.Font,
-            Text = text,
-            TextColor3 = Theme.BindText,
-            TextSize = 10,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            LayoutOrder = self._optionCount + 1,
-        })
-        self._optionCount = self._optionCount + 1
-        task.defer(recalcHeight)
+        self._optCount = self._optCount + 1
+        Create("TextLabel", { Parent = self.OptsInner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 16), Font = Theme.Font, Text = text, TextColor3 = Theme.BindText, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = self._optCount })
+        task.defer(recalc)
     end
 
     -- ─── SEPARATOR ───
     function mod:Separator()
-        local sep = Create("Frame", {
-            Parent = self.OptionsInner,
-            BackgroundTransparency = 1,
-            Size = UDim2.new(1, 0, 0, 6),
-            LayoutOrder = self._optionCount + 1,
-        })
-        Create("Frame", {
-            Parent = sep,
-            BackgroundColor3 = Theme.Separator,
-            BorderSizePixel = 0,
-            Position = UDim2.new(0, 0, 0.5, 0),
-            Size = UDim2.new(1, 0, 0, 1),
-        })
-        self._optionCount = self._optionCount + 1
-        task.defer(recalcHeight)
+        self._optCount = self._optCount + 1
+        local s = Create("Frame", { Parent = self.OptsInner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 6), LayoutOrder = self._optCount })
+        Create("Frame", { Parent = s, BackgroundColor3 = Theme.Separator, BorderSizePixel = 0, Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.new(1, 0, 0, 1) })
+        task.defer(recalc)
     end
 
-    table.insert(cat.Modules, mod)
-    table.insert(lib._allModules, mod)
-    return mod
-end
-
--- ═══════════════════════════════════
--- CONFIG MODULE HELPER
--- ═══════════════════════════════════
-function Library:_CreateConfigModule(cat)
-    local mod = cat:Module("config")
-    local lib = self
-
-    local selectedConfig = "default"
-
-    -- text input for config name
-    local inputRow = Create("Frame", {
-        Parent = mod.OptionsInner,
-        BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 24),
-        LayoutOrder = 0,
-    })
-
-    Create("TextLabel", {
-        Parent = inputRow,
-        BackgroundTransparency = 1,
-        Size = UDim2.new(0.35, 0, 1, 0),
-        Font = Theme.Font,
-        Text = "name",
-        TextColor3 = Theme.OptionText,
-        TextSize = 12,
-        TextXAlignment = Enum.TextXAlignment.Left,
-    })
-
-    local configInput = Create("TextBox", {
-        Parent = inputRow,
-        BackgroundColor3 = Theme.DropBg,
-        BorderSizePixel = 0,
-        Position = UDim2.new(0.35, 4, 0.5, -9),
-        Size = UDim2.new(0.65, -4, 0, 18),
-        Font = Theme.Font,
-        Text = "default",
-        PlaceholderText = "config name",
-        PlaceholderColor3 = Theme.BindText,
-        TextColor3 = Theme.OptionValue,
-        TextSize = 11,
-        ClearTextOnFocus = false,
-    })
-    Create("UICorner", { CornerRadius = UDim.new(0, 3), Parent = configInput })
-    Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = configInput })
-    Create("UIPadding", { PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4), Parent = configInput })
-
-    configInput.FocusLost:Connect(function()
-        selectedConfig = configInput.Text
-    end)
-
-    mod._optionCount = mod._optionCount + 1
-
-    -- buttons
-    local function makeConfigBtn(text, order, cb)
+    -- ─── BUTTON ───
+    function mod:Button(text, callback)
+        self._optCount = self._optCount + 1
         local btn = Create("TextButton", {
-            Parent = mod.OptionsInner,
-            BackgroundColor3 = Theme.DropBg,
-            BorderSizePixel = 0,
-            Size = UDim2.new(1, 0, 0, 22),
-            Font = Theme.FontSemi,
-            Text = text,
-            TextColor3 = Theme.OptionValue,
-            TextSize = 11,
-            AutoButtonColor = false,
-            LayoutOrder = order,
+            Parent = self.OptsInner, BackgroundColor3 = Theme.DropBg, BorderSizePixel = 0,
+            Size = UDim2.new(1, 0, 0, 22), Font = Theme.FontSemi, Text = text,
+            TextColor3 = Theme.OptionValue, TextSize = 11, AutoButtonColor = false, LayoutOrder = self._optCount,
         })
         Create("UICorner", { CornerRadius = UDim.new(0, 3), Parent = btn })
         Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = btn })
-
         btn.MouseEnter:Connect(function() Tween(btn, 0.1, { BackgroundColor3 = Theme.DropHover }) end)
         btn.MouseLeave:Connect(function() Tween(btn, 0.1, { BackgroundColor3 = Theme.DropBg }) end)
+        btn.MouseButton1Click:Connect(function() if callback then callback() end end)
+        task.defer(recalc)
+    end
 
-        btn.MouseButton1Click:Connect(function()
-            selectedConfig = configInput.Text
-            if cb then cb() end
+    -- ─── TEXTBOX ───
+    function mod:TextBox(tname, default, placeholder, callback)
+        self._optCount = self._optCount + 1
+        local id = self._id .. "." .. tname
+        local opt = { Type = "TextBox", Value = default or "" }
+
+        local row = Create("Frame", { Parent = self.OptsInner, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36), LayoutOrder = self._optCount })
+        Create("TextLabel", { Parent = row, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 14), Font = Theme.Font, Text = tname, TextColor3 = Theme.OptionText, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left })
+
+        local tb = Create("TextBox", {
+            Parent = row, BackgroundColor3 = Theme.DropBg, BorderSizePixel = 0,
+            Position = UDim2.new(0, 0, 0, 16), Size = UDim2.new(1, 0, 0, 18),
+            Font = Theme.Font, Text = default or "", PlaceholderText = placeholder or "",
+            PlaceholderColor3 = Theme.BindText, TextColor3 = Theme.OptionValue,
+            TextSize = 11, ClearTextOnFocus = false,
+        })
+        Create("UICorner", { CornerRadius = UDim.new(0, 3), Parent = tb })
+        Create("UIStroke", { Color = Theme.DropBorder, Thickness = 1, Parent = tb })
+        Create("UIPadding", { PaddingLeft = UDim.new(0, 5), PaddingRight = UDim.new(0, 5), Parent = tb })
+
+        tb.FocusLost:Connect(function()
+            opt.Value = tb.Text
+            if callback then callback(tb.Text) end
         end)
 
-        mod._optionCount = mod._optionCount + 1
+        function opt:Set(val) tb.Text = val; opt.Value = val end
+        function opt:Get() return tb.Text end
+
+        lib._options[id] = opt
+        task.defer(recalc)
+        return opt
     end
 
-    makeConfigBtn("save config", 1, function()
-        lib:SaveConfig(selectedConfig)
-    end)
-
-    makeConfigBtn("load config", 2, function()
-        lib:LoadConfig(selectedConfig)
-    end)
-
-    makeConfigBtn("delete config", 3, function()
-        lib:DeleteConfig(selectedConfig)
-    end)
-
-    -- dropdown showing available configs
-    local configList = {}
-
-    local configDrop = mod:Dropdown("configs", {"default"}, "default", function(val)
-        selectedConfig = val
-        configInput.Text = val
-    end)
-
-    -- refresh function
-    local function refreshConfigs()
-        local cfgs = lib:GetConfigs()
-        if #cfgs == 0 then cfgs = {"default"} end
-        -- we can't dynamically rebuild dropdown items easily, but we store reference
-        configList = cfgs
-    end
-
-    -- refresh on expand
-    local origExpanded = mod.HeaderBtn.MouseButton2Click
-    -- we'll just refresh periodically when expanded
-    task.spawn(function()
-        while task.wait(2) do
-            if mod.Expanded then refreshConfigs() end
-        end
-    end)
-
+    table.insert(cat.Modules, mod)
+    table.insert(lib._modules, mod)
     return mod
-end
-
-function Library:Destroy()
-    for _, c in ipairs(self._connections) do
-        if c.Disconnect then c:Disconnect() end
-    end
-    self.ScreenGui:Destroy()
 end
 
 return Library
