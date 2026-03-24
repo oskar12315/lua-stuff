@@ -255,11 +255,12 @@ function Library.new(name)
     if old then old:Destroy() end
 
     self.gui = Make("ScreenGui", {
-        Name = "MCHUI",
-        Parent = LP:WaitForChild("PlayerGui"),
-        ZIndexBehavior = Enum.ZIndexBehavior.Global,
-        ResetOnSpawn = false,
-        DisplayOrder = 999,
+    Name = "MCHUI",
+    Parent = LP:WaitForChild("PlayerGui"),
+    ZIndexBehavior = Enum.ZIndexBehavior.Global,
+    ResetOnSpawn = false,
+    DisplayOrder = 999,
+    IgnoreGuiInset = true,  -- ADD THIS LINE
     })
 
     -- content layer (hidden initially for loading)
