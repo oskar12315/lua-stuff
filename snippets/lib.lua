@@ -215,13 +215,13 @@ function Library.new(name)
     })
 
     self.cLayer = Make("Frame", {
-        Parent = self.gui, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0), ZIndex = 1, Visible = false,
+    Parent = self.gui, BackgroundTransparency = 1,
+    Size = UDim2.new(1, 0, 1, 0), ZIndex = 1, Visible = true,
     })
 
     self.sLayer = Make("Frame", {
-        Parent = self.gui, BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 1, 0), ZIndex = 50, Visible = false,
+    Parent = self.gui, BackgroundTransparency = 1,
+    Size = UDim2.new(1, 0, 1, 0), ZIndex = 50, Visible = true,
     })
 
     self.pLayer = Make("Frame", {
@@ -260,17 +260,13 @@ function Library.new(name)
     Drags.Init(self)
 
     ShowLoading(self.gui, self.name, function()
-        self.cLayer.Visible = true
-        self.sLayer.Visible = true
-        -- stagger fade in categories
+        -- just fade in categories nicely after loading screen disappears
         for i, cat in ipairs(self.cats) do
             cat.frame.BackgroundTransparency = 1
             task.delay(i * 0.05, function()
                 Tw(cat.frame, 0.35, { BackgroundTransparency = 0.06 }, Enum.EasingStyle.Quart)
             end)
         end
-        self.searchFrame.BackgroundTransparency = 1
-        Tw(self.searchFrame, 0.35, { BackgroundTransparency = 0 })
     end)
 
     -- animated toggle
