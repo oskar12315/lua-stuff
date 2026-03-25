@@ -631,20 +631,23 @@ function Library:Load(n)
         for _, ms in ipairs(d.mods) do
             for _, m in ipairs(self.mods) do
                 if m.fid == ms.id then
-                    -- never restore "unload" as enabled
+                -- never restore "unload" as enabled
                     if string.find(string.lower(m.name), "unload") then
-                        m:SetOn(false)
+                    m:SetOn(false)
                     else
                         m:SetOn(ms.on or false)
                     end
-                    m:SetOn(ms.on or false)
-                    if ms.bk then m.bk = Enum.KeyCode[ms.bk] or Enum.KeyCode.Unknown end
-                    m.bm = ms.bm or "toggle"; m:UB()
+    
+                    -- restore keybind + mode
+                    if ms.bk then
+                    m.bk = Enum.KeyCode[ms.bk] or Enum.KeyCode.Unknown
+                    end
+                    m.bm = ms.bm or "toggle"
+                    m:UB()
                 end
             end
         end
     end
-end
 
 function Library:Del(n) FD(CFG_DIR .. "/" .. n .. ".json") end
 function Library:Cfgs()
