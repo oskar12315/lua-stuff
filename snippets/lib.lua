@@ -197,6 +197,7 @@ function Library.new(name)
     self.dead = false
     self.popup = nil
     self._animating = false
+    self._loaded = false
 
     function self:SetKey(key)
         self.tKey = key
@@ -215,13 +216,13 @@ function Library.new(name)
     })
 
     self.cLayer = Make("Frame", {
-    Parent = self.gui, BackgroundTransparency = 1,
-    Size = UDim2.new(1, 0, 1, 0), ZIndex = 1, Visible = true,
+        Parent = self.gui, BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0), ZIndex = 1, Visible = true,
     })
 
     self.sLayer = Make("Frame", {
-    Parent = self.gui, BackgroundTransparency = 1,
-    Size = UDim2.new(1, 0, 1, 0), ZIndex = 50, Visible = true,
+        Parent = self.gui, BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0), ZIndex = 50, Visible = true,
     })
 
     self.pLayer = Make("Frame", {
@@ -259,8 +260,9 @@ function Library.new(name)
     self:MkKBW()
     Drags.Init(self)
 
+    -- loading screen - blocks input until done
     ShowLoading(self.gui, self.name, function()
-        -- just fade in categories nicely after loading screen disappears
+        self._loaded = true
         for i, cat in ipairs(self.cats) do
             cat.frame.BackgroundTransparency = 1
             task.delay(i * 0.05, function()
@@ -269,9 +271,9 @@ function Library.new(name)
         end
     end)
 
-    -- animated toggle
+    -- toggle - ONLY works after loading
     table.insert(self.conn, UserInputService.InputBegan:Connect(function(inp, gpe)
-        if gpe or self.dead or self._animating then return end
+        if gpe or self.dead or self._animating or not self._loaded then return end
         if inp.KeyCode == self.tKey then
             self._animating = true
             self.vis = not self.vis
@@ -311,11 +313,10 @@ function Library.new(name)
         end
     end))
 
-    -- keybind processing
+    -- keybinds - ONLY works after loading
     table.insert(self.conn, UserInputService.InputBegan:Connect(function(inp, gpe)
-        if gpe or self.dead then return end
+        if gpe or self.dead or not self._loaded then return end
         if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
-        -- don't process module binds if this is the toggle key
         if inp.KeyCode == self.tKey then return end
 
         for _, kl in ipairs(self.kbListen) do
@@ -336,20 +337,24 @@ function Library.new(name)
     end))
 
     table.insert(self.conn, UserInputService.InputEnded:Connect(function(inp)
-        if self.dead then return end
+        if self.dead or not self._loaded then return end
         if inp.UserInputType ~= Enum.UserInputType.Keyboard then return end
         for _, m in ipairs(self.mods) do
             if m.bk and m.bk == inp.KeyCode and m.bm == "hold" then m:SetOn(false) end
         end
     end))
 
-    -- heartbeat height updater
+    -- heartbeat - delayed start, skip zero heights
+    local hbFrame = 0
     RunService.Heartbeat:Connect(function()
         if self.dead then return end
+        hbFrame = hbFrame + 1
+        if hbFrame < 90 then return end
+
         for _, cat in ipairs(self.cats) do
             if not cat.collapsed then
                 local h = cat.mlLayout.AbsoluteContentSize.Y
-                if math.abs(h - cat.lastH) > 0.5 then
+                if h > 0 and math.abs(h - cat.lastH) > 0.5 then
                     cat.lastH = h
                     cat.ml.Size = UDim2.new(1, -24, 0, h)
                     cat.frame.Size = UDim2.new(0, 200, 0, 44 + h)
@@ -359,7 +364,7 @@ function Library.new(name)
     end)
 
     FM(CFG_DIR)
-    task.delay(3, function()
+    task.delay(4, function()
         if not self.dead then self:Load(AUTO_CFG) end
     end)
 
