@@ -27,7 +27,7 @@ local Theme = {
     LabelText     = Color3.fromRGB(200, 200, 200),
     SubText       = Color3.fromRGB(140, 140, 140),
     ScrollBar     = Color3.fromRGB(60, 60, 70),
-    WrapSelected  = Color3.fromRGB(230, 180, 80),   -- gold tint for wrap cells
+    WrapSelected  = Color3.fromRGB(230, 180, 80),
     WrapPurple    = Color3.fromRGB(186, 156, 230),
 }
 
@@ -106,13 +106,12 @@ end
 function BroomHackUI.new()
     local self   = setmetatable({}, BroomHackUI)
     self.weapons = {}
-    -- view: "weapons" | "skins" | "wraps"
     self.currentView    = "weapons"
     self.currentWeapon  = nil
     self.currentSkin    = nil
-    self.equippedSkins  = {}   -- [weaponName] = skinName
-    self.equippedWraps  = {}   -- [weaponName] = wrapName
-    self._wrapCallback  = nil  -- set per weapon via AddWeapon
+    self.equippedSkins  = {}
+    self.equippedWraps  = {}
+    self._wrapCallback  = nil
     self:_buildUI()
     return self
 end
@@ -153,7 +152,6 @@ function BroomHackUI:_buildUI()
         Parent           = self.mainFrame,
     })
     create("UICorner", { CornerRadius = UDim.new(0,4), Parent = self.topBar })
-    -- cover bottom rounded corners of topbar
     create("Frame", {
         Size = UDim2.new(1,0,0,6), Position = UDim2.new(0,0,1,-6),
         BackgroundColor3 = Theme.TopBar, BorderSizePixel = 0, Parent = self.topBar,
@@ -190,7 +188,7 @@ function BroomHackUI:_buildUI()
         BorderSizePixel = 0, Parent = self.mainFrame,
     })
 
-    -- Back hint (top-right of topbar)
+    -- Back hint
     self.backIndicator = create("TextLabel", {
         Size               = UDim2.new(0,210,0,TOP_BAR_HEIGHT),
         Position           = UDim2.new(1,-215,0,0),
@@ -237,14 +235,29 @@ function BroomHackUI:_buildUI()
 
     makeDraggable(self.mainFrame, self.topBar)
 
-    -- Right-click goes back one level
+    -- =============================================
+    -- FIX 1: Right-click handler — ignore "processed"
+    --        so it works even when clicking over buttons
+    -- =============================================
     UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then return end
         if input.UserInputType == Enum.UserInputType.MouseButton2 then
-            if self.currentView == "skins" then
-                self:_showWeapons()
-            elseif self.currentView == "wraps" then
+            -- Check if the mouse is actually over our UI
+            local mousePos = UserInputService:GetMouseLocation()
+            local frameAbsPos  = self.mainFrame.AbsolutePosition
+            local frameAbsSize = self.mainFrame.AbsoluteSize
+
+            local isOverUI = self.mainFrame.Visible
+                and mousePos.X >= frameAbsPos.X
+                and mousePos.X <= frameAbsPos.X + frameAbsSize.X
+                and mousePos.Y >= frameAbsPos.Y
+                and mousePos.Y <= frameAbsPos.Y + frameAbsSize.Y
+
+            if not isOverUI then return end
+
+            if self.currentView == "wraps" then
                 self:_showSkins(self.currentWeapon)
+            elseif self.currentView == "skins" then
+                self:_showWeapons()
             end
         end
     end)
@@ -256,9 +269,14 @@ end
 function BroomHackUI:_setTitle(suffix, suffixColor)
     local pr,pg,pb = purpleRGB()
     local tr,tg,tb = topbarRGB()
-    local cr,cg,cb = suffixColor
-        and math.floor(suffixColor.R*255), math.floor(suffixColor.G*255), math.floor(suffixColor.B*255)
-        or subRGB()
+    local cr,cg,cb
+    if suffixColor then
+        cr = math.floor(suffixColor.R*255)
+        cg = math.floor(suffixColor.G*255)
+        cb = math.floor(suffixColor.B*255)
+    else
+        cr,cg,cb = subRGB()
+    end
     self.titleLabel.Text = string.format(
         '<font color="rgb(%d,%d,%d)">Broom</font>'..
         '<font color="rgb(%d,%d,%d)">Hack Skinchanger</font>'..
@@ -269,12 +287,26 @@ end
 
 -- ============================================
 -- CLEAR GRID
+-- FIX 2: Optional flag to preserve scroll position
 -- ============================================
-function BroomHackUI:_clearGrid()
+function BroomHackUI:_clearGrid(preserveScroll)
+    local savedScroll = nil
+    if preserveScroll then
+        savedScroll = self.scrollFrame.CanvasPosition
+    end
+
     for _, c in ipairs(self.scrollFrame:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
-    self.scrollFrame.CanvasPosition = Vector2.new(0,0)
+
+    if preserveScroll and savedScroll then
+        -- Defer restoring scroll so the grid has time to rebuild
+        task.defer(function()
+            self.scrollFrame.CanvasPosition = savedScroll
+        end)
+    else
+        self.scrollFrame.CanvasPosition = Vector2.new(0, 0)
+    end
 end
 
 -- ============================================
@@ -287,7 +319,7 @@ function BroomHackUI:AddWeapon(cfg)
         LayoutOrder = cfg.LayoutOrder or (#self.weapons + 1),
         Skins       = cfg.Skins       or {},
         Wraps       = cfg.Wraps       or {},
-        WrapCallback= cfg.WrapCallback,   -- function(weaponName, wrapName)
+        WrapCallback= cfg.WrapCallback,
         _cell       = nil,
         _dot        = nil,
     }
@@ -330,7 +362,6 @@ function BroomHackUI:_createWeaponCell(weapon)
         Parent = cell,
     })
 
-    -- Purple dot = skin equipped; gold dot = wrap equipped
     local skinDot = create("Frame", {
         Size = UDim2.new(0,6,0,6), Position = UDim2.new(1,-10,0,4),
         BackgroundColor3 = Theme.PastelPurple,
@@ -439,30 +470,27 @@ function BroomHackUI:_showSkins(weapon)
         end)
 
         btn.MouseButton1Click:Connect(function()
-            -- Fire skin callback
             self.equippedSkins[weapon.Name] = skin.Name
             if weapon._dot then weapon._dot.Visible = true end
             if skin.Callback then
                 skin.Callback(weapon.Name, skin.Name)
             end
             self.currentSkin = skin
-            -- Immediately open wrap selection for this weapon
             self:_showWraps(weapon)
         end)
     end
 end
 
 -- ============================================
--- WRAPS VIEW  (opens automatically after skin pick)
+-- WRAPS VIEW
 -- ============================================
-function BroomHackUI:_showWraps(weapon)
+function BroomHackUI:_showWraps(weapon, preserveScroll)
     self.currentView   = "wraps"
     self.currentWeapon = weapon
     self.backIndicator.Visible = true
     self:_setTitle(weapon.Name .. "  ›  Wrap", Theme.WrapSelected)
-    self:_clearGrid()
+    self:_clearGrid(preserveScroll)
 
-    -- "None" cell first
     local allWraps = {"None"}
     for _, w in ipairs(weapon.Wraps or {}) do
         table.insert(allWraps, w)
@@ -486,7 +514,6 @@ function BroomHackUI:_showWraps(weapon)
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = cell,
         })
 
-        -- Wrap icon placeholder (gold block)
         local iconFrame = create("Frame", {
             Size = UDim2.new(0,IMAGE_SIZE,0,IMAGE_SIZE),
             Position = UDim2.new(0.5,-IMAGE_SIZE/2,0,5),
@@ -552,13 +579,12 @@ function BroomHackUI:_showWraps(weapon)
                 if weapon._wrapDot then weapon._wrapDot.Visible = true end
             end
 
-            -- Fire wrap callback if weapon has one
             if weapon.WrapCallback then
                 weapon.WrapCallback(weapon.Name, wrapName == "None" and nil or wrapName)
             end
 
-            -- Re-render wraps view to update selection highlight
-            self:_showWraps(weapon)
+            -- FIX 2: Preserve scroll position when re-rendering after wrap selection
+            self:_showWraps(weapon, true)
         end)
     end
 end
