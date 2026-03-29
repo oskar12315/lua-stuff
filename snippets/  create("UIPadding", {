@@ -1,26 +1,44 @@
 --[[
-    BroomHack Skin Changer UI Library
-    Flow: Weapons → Skins → Wraps (opens automatically after skin select)
-    Right click always goes back one level
+    BroomHack Cosmetic Changer UI Library — v2
     
-    NOW WITH LIVE 3D VIEWPORT PREVIEWS for skins & wraps
+    Layout matches the reference screenshot:
+    ┌─────────────────────────────────────────────────────┐
+    │ Cosmetic Changer                        [RightShift]│
+    ├───────────────────┬─────────────────────────────────┤
+    │ weapon filter     │ cosmetic filter                 │
+    │ [search........]  │ [search............]            │
+    │                   │ [skin] [wrap] [charm]           │
+    │  ┌──┐ ┌──┐ ┌──┐  │  ┌──┐ ┌──┐ ┌──┐               │
+    │  │  │ │  │ │  │  │  │  │ │  │ │  │               │
+    │  └──┘ └──┘ └──┘  │  └──┘ └──┘ └──┘               │
+    │  ...              │  ...                            │
+    │                   │                                 │
+    │                   │ [  apply selected to all  ]     │
+    │                   │ right click weapon to remove    │
+    └───────────────────┴─────────────────────────────────┘
     
-    Usage for skins:
-        Skins = {
-            { Name = "Dragon Lore", Model = game.ReplicatedStorage.Skins.DragonLore, Callback = function(...) end },
-            -- OR still use Image if you want a flat icon fallback:
-            { Name = "Vanilla", Image = "rbxassetid://123456", Callback = function(...) end },
-        }
-    
-    Usage for wraps:
-        Wraps = {
-            { Name = "Gold",    Model = game.ReplicatedStorage.Wraps.Gold },
-            { Name = "Carbon",  Model = game.ReplicatedStorage.Wraps.Carbon },
-            -- Or just strings like before for placeholder icons:
-            "SimpleWrapName",
-        }
-    
-    WrapCallback = function(weaponName, wrapName) end
+    Usage:
+        local UI = require(...)
+        local changer = UI.new()
+        
+        changer:AddWeapon({
+            Name = "Assault Rifle",
+            Model = someModel,          -- or Image = "rbxassetid://..."
+            Skins = {
+                { Name = "AK-47", Model = ..., Callback = function(w,s) end },
+            },
+            Wraps = {
+                { Name = "Gold", Model = ... },
+                "Diamond",  -- plain string also works
+            },
+            Charms = {
+                { Name = "Star", Model = ... },
+            },
+            WrapCallback  = function(weaponName, wrapName) end,
+            CharmCallback = function(weaponName, charmName) end,
+        })
+        
+        changer:SetKeybind(Enum.KeyCode.RightShift)
 ]]
 
 local BroomHackUI = {}
@@ -37,32 +55,54 @@ local player = Players.LocalPlayer
 -- THEME
 -- ============================================
 local Theme = {
-    Background    = Color3.fromRGB(30, 30, 35),
-    TopBar        = Color3.fromRGB(40, 40, 48),
-    TopBarText    = Color3.fromRGB(180, 180, 180),
-    PastelPurple  = Color3.fromRGB(186, 156, 230),
-    CellBackground= Color3.fromRGB(38, 38, 45),
-    CellHover     = Color3.fromRGB(50, 50, 60),
-    CellSelected  = Color3.fromRGB(60, 55, 70),
-    LabelText     = Color3.fromRGB(200, 200, 200),
-    SubText       = Color3.fromRGB(140, 140, 140),
-    ScrollBar     = Color3.fromRGB(60, 60, 70),
-    WrapSelected  = Color3.fromRGB(230, 180, 80),
-    WrapPurple    = Color3.fromRGB(186, 156, 230),
-    ViewportBG    = Color3.fromRGB(32, 32, 40),
+    Background     = Color3.fromRGB(22, 22, 28),
+    Panel          = Color3.fromRGB(28, 28, 35),
+    TopBar         = Color3.fromRGB(30, 30, 38),
+    TopBarText     = Color3.fromRGB(180, 180, 180),
+    Accent         = Color3.fromRGB(100, 140, 255),
+    AccentDim      = Color3.fromRGB(70, 100, 200),
+    CellBg         = Color3.fromRGB(35, 35, 42),
+    CellHover      = Color3.fromRGB(48, 48, 58),
+    CellSelected   = Color3.fromRGB(45, 50, 70),
+    CellEquipped   = Color3.fromRGB(40, 55, 40),
+    LabelText      = Color3.fromRGB(200, 200, 200),
+    SubText        = Color3.fromRGB(120, 120, 130),
+    SearchBg       = Color3.fromRGB(20, 20, 26),
+    SearchBorder   = Color3.fromRGB(55, 55, 65),
+    SearchText     = Color3.fromRGB(160, 160, 170),
+    TabActive      = Color3.fromRGB(100, 140, 255),
+    TabInactive    = Color3.fromRGB(50, 50, 60),
+    TabTextActive  = Color3.fromRGB(255, 255, 255),
+    TabTextInactive= Color3.fromRGB(140, 140, 150),
+    ScrollBar      = Color3.fromRGB(55, 55, 65),
+    ButtonBg       = Color3.fromRGB(35, 35, 42),
+    ButtonBorder   = Color3.fromRGB(100, 140, 255),
+    EquipDot       = Color3.fromRGB(80, 200, 80),
+    ViewportBG     = Color3.fromRGB(28, 28, 36),
+    Divider        = Color3.fromRGB(50, 50, 60),
+    Stroke         = Color3.fromRGB(55, 55, 65),
 }
 
-local COLUMNS        = 4
-local CELL_SIZE      = 110
-local CELL_PADDING   = 6
-local TOP_BAR_HEIGHT = 30
-local IMAGE_SIZE     = 70
-local LABEL_HEIGHT   = 18
-local WINDOW_PADDING = 8
-
--- Viewport camera settings
-local CAMERA_FOV     = 50
-local ROTATE_SPEED   = 30  -- degrees per second
+-- Layout constants
+local TOTAL_WIDTH     = 530
+local TOTAL_HEIGHT    = 480
+local TOP_BAR_H       = 28
+local FILTER_H        = 22
+local SEARCH_H        = 24
+local TAB_ROW_H       = 26
+local BOTTOM_BAR_H    = 50
+local LEFT_WIDTH      = 200
+local DIVIDER_W       = 1
+local CELL_PAD        = 4
+local LEFT_COLS       = 3
+local RIGHT_COLS      = 3
+local LEFT_CELL       = 58
+local RIGHT_CELL      = 95
+local IMG_SIZE_SMALL  = 40
+local IMG_SIZE_BIG    = 65
+local LABEL_H         = 16
+local CAMERA_FOV      = 50
+local ROTATE_SPEED    = 30
 
 -- ============================================
 -- HELPERS
@@ -101,154 +141,92 @@ local function makeDraggable(frame, handle)
     end)
 end
 
-local function getRealDate()
-    local m = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"}
-    local t = os.date("*t")
-    return m[t.month] .. " " .. t.day .. ", " .. t.year
-end
-
-local function purpleRGB()
-    return math.floor(Theme.PastelPurple.R*255),
-           math.floor(Theme.PastelPurple.G*255),
-           math.floor(Theme.PastelPurple.B*255)
-end
-
-local function topbarRGB()
-    return math.floor(Theme.TopBarText.R*255),
-           math.floor(Theme.TopBarText.G*255),
-           math.floor(Theme.TopBarText.B*255)
-end
-
-local function subRGB()
-    return math.floor(Theme.SubText.R*255),
-           math.floor(Theme.SubText.G*255),
-           math.floor(Theme.SubText.B*255)
-end
-
 -- ============================================
--- GET BOUNDING BOX OF A MODEL
+-- BOUNDING BOX FOR VIEWPORT
 -- ============================================
 local function getModelBounds(model)
-    local minVec = Vector3.new(math.huge, math.huge, math.huge)
-    local maxVec = Vector3.new(-math.huge, -math.huge, -math.huge)
-
+    local minV = Vector3.new(math.huge, math.huge, math.huge)
+    local maxV = Vector3.new(-math.huge, -math.huge, -math.huge)
     local parts = {}
-    if model:IsA("BasePart") then
-        table.insert(parts, model)
+    if model:IsA("BasePart") then table.insert(parts, model) end
+    for _, d in ipairs(model:GetDescendants()) do
+        if d:IsA("BasePart") then table.insert(parts, d) end
     end
-    for _, desc in ipairs(model:GetDescendants()) do
-        if desc:IsA("BasePart") then
-            table.insert(parts, desc)
-        end
-    end
-
-    if #parts == 0 then
-        return Vector3.zero, Vector3.zero, Vector3.zero
-    end
-
+    if #parts == 0 then return Vector3.zero, Vector3.zero end
     for _, part in ipairs(parts) do
-        local cf = part.CFrame
-        local size = part.Size
-        -- 8 corners of the bounding box
-        for _, offset in ipairs({
-            Vector3.new(-1,-1,-1), Vector3.new(-1,-1, 1),
-            Vector3.new(-1, 1,-1), Vector3.new(-1, 1, 1),
-            Vector3.new( 1,-1,-1), Vector3.new( 1,-1, 1),
-            Vector3.new( 1, 1,-1), Vector3.new( 1, 1, 1),
+        local cf, sz = part.CFrame, part.Size
+        for _, o in ipairs({
+            Vector3.new(-1,-1,-1), Vector3.new(-1,-1,1), Vector3.new(-1,1,-1), Vector3.new(-1,1,1),
+            Vector3.new(1,-1,-1),  Vector3.new(1,-1,1),  Vector3.new(1,1,-1),  Vector3.new(1,1,1),
         }) do
-            local corner = cf:PointToWorldSpace(size * 0.5 * offset)
-            minVec = Vector3.new(
-                math.min(minVec.X, corner.X),
-                math.min(minVec.Y, corner.Y),
-                math.min(minVec.Z, corner.Z)
-            )
-            maxVec = Vector3.new(
-                math.max(maxVec.X, corner.X),
-                math.max(maxVec.Y, corner.Y),
-                math.max(maxVec.Z, corner.Z)
-            )
+            local c = cf:PointToWorldSpace(sz * 0.5 * o)
+            minV = Vector3.new(math.min(minV.X,c.X), math.min(minV.Y,c.Y), math.min(minV.Z,c.Z))
+            maxV = Vector3.new(math.max(maxV.X,c.X), math.max(maxV.Y,c.Y), math.max(maxV.Z,c.Z))
         end
     end
-
-    local center = (minVec + maxVec) * 0.5
-    local extents = maxVec - minVec
-    return center, extents, minVec
+    return (minV + maxV) * 0.5, maxV - minV
 end
 
 -- ============================================
--- CREATE A VIEWPORT WITH A CLONED MODEL
--- Sets up camera to frame the model and stores
--- rotation data for the spin loop
+-- VIEWPORT CREATION
 -- ============================================
 local function createViewport(parent, model, size, position)
-    local viewport = create("ViewportFrame", {
-        Size = size or UDim2.new(0, IMAGE_SIZE, 0, IMAGE_SIZE),
-        Position = position or UDim2.new(0.5, -IMAGE_SIZE/2, 0, 5),
+    local vp = create("ViewportFrame", {
+        Size = size, Position = position,
         BackgroundColor3 = Theme.ViewportBG,
-        BackgroundTransparency = 0.5,
-        BorderSizePixel = 0,
-        Parent = parent,
+        BackgroundTransparency = 0.3,
+        BorderSizePixel = 0, Parent = parent,
     })
-    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = viewport })
+    create("UICorner", { CornerRadius = UDim.new(0,3), Parent = vp })
+    vp.Ambient    = Color3.fromRGB(160, 155, 180)
+    vp.LightColor = Color3.fromRGB(255, 255, 255)
+    vp.LightDirection = Vector3.new(-1, -1, -1).Unit
 
-    -- Ambient + light so the model is visible
-    local ambient = Color3.fromRGB(180, 170, 200)
-    viewport.Ambient = ambient
-    viewport.LightColor = Color3.fromRGB(255, 255, 255)
-    viewport.LightDirection = Vector3.new(-1, -1, -1).Unit
-
-    -- Clone the model into the viewport
     local clone = model:Clone()
-    clone.Parent = viewport
-
-    -- Make sure all parts are anchored
+    clone.Parent = vp
     if clone:IsA("BasePart") then clone.Anchored = true end
-    for _, desc in ipairs(clone:GetDescendants()) do
-        if desc:IsA("BasePart") then desc.Anchored = true end
+    for _, d in ipairs(clone:GetDescendants()) do
+        if d:IsA("BasePart") then d.Anchored = true end
     end
 
-    -- Calculate camera position to frame the model
     local center, extents = getModelBounds(clone)
-    local maxExtent = math.max(extents.X, extents.Y, extents.Z, 0.1)
-
-    -- Distance so the model fills the viewport nicely
-    local fovRad = math.rad(CAMERA_FOV)
-    local dist = (maxExtent * 0.5) / math.tan(fovRad * 0.5) * 1.3
+    local maxE = math.max(extents.X, extents.Y, extents.Z, 0.1)
+    local dist = (maxE * 0.5) / math.tan(math.rad(CAMERA_FOV) * 0.5) * 1.3
 
     local cam = Instance.new("Camera")
     cam.FieldOfView = CAMERA_FOV
-    cam.CFrame = CFrame.new(center + Vector3.new(0, maxExtent * 0.15, dist), center)
-    cam.Parent = viewport
-    viewport.CurrentCamera = cam
+    cam.CFrame = CFrame.new(center + Vector3.new(0, maxE * 0.15, dist), center)
+    cam.Parent = vp
+    vp.CurrentCamera = cam
 
-    return viewport, clone, cam, center, dist
+    return vp, clone, cam, center, dist
 end
 
 -- ============================================
 -- CONSTRUCTOR
 -- ============================================
 function BroomHackUI.new()
-    local self   = setmetatable({}, BroomHackUI)
-    self.weapons = {}
-    self.currentView    = "weapons"
-    self.currentWeapon  = nil
-    self.currentSkin    = nil
-    self.equippedSkins  = {}
-    self.equippedWraps  = {}
-    self._wrapCallback  = nil
-
-    -- Track all active viewports for rotation
-    -- Each entry: { camera, center, distance, angle }
+    local self = setmetatable({}, BroomHackUI)
+    self.weapons         = {}
+    self._weaponsByName  = {}
+    self.selectedWeapon  = nil
+    self.activeTab       = "skin"      -- "skin" | "wrap" | "charm"
+    self.equippedSkins   = {}
+    self.equippedWraps   = {}
+    self.equippedCharms  = {}
     self._activeViewports = {}
     self._spinConnection  = nil
-
+    self._weaponCells     = {}
+    self._cosmeticCells   = {}
+    self._weaponSearch    = ""
+    self._cosmeticSearch  = ""
     self:_buildUI()
     self:_startSpinLoop()
     return self
 end
 
 -- ============================================
--- SPIN LOOP — rotates all active viewport cameras
+-- SPIN LOOP
 -- ============================================
 function BroomHackUI:_startSpinLoop()
     if self._spinConnection then return end
@@ -272,271 +250,401 @@ end
 
 function BroomHackUI:_registerViewport(camera, center, distance)
     table.insert(self._activeViewports, {
-        camera   = camera,
-        center   = center,
-        distance = distance,
-        angle    = 0,
+        camera = camera, center = center, distance = distance, angle = 0,
     })
 end
 
 -- ============================================
--- BUILD CHROME
+-- CREATE PREVIEW (3D or 2D or placeholder)
+-- ============================================
+function BroomHackUI:_createPreview(parent, data, imgSize, pos)
+    if data.Model then
+        local vp, _, cam, center, dist = createViewport(parent, data.Model,
+            UDim2.new(0, imgSize, 0, imgSize), pos)
+        self:_registerViewport(cam, center, dist)
+        return vp
+    elseif data.Image and data.Image ~= "" then
+        return create("ImageLabel", {
+            Size = UDim2.new(0, imgSize, 0, imgSize), Position = pos,
+            BackgroundTransparency = 1, Image = data.Image,
+            ScaleType = Enum.ScaleType.Fit, Parent = parent,
+        })
+    else
+        local ph = create("Frame", {
+            Size = UDim2.new(0, imgSize, 0, imgSize), Position = pos,
+            BackgroundColor3 = Theme.ViewportBG, BorderSizePixel = 0, Parent = parent,
+        })
+        create("UICorner", { CornerRadius = UDim.new(0,3), Parent = ph })
+        create("TextLabel", {
+            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1,
+            Text = "?", TextColor3 = Theme.SubText, TextSize = 20,
+            Font = Enum.Font.GothamBold, Parent = ph,
+        })
+        return ph
+    end
+end
+
+-- ============================================
+-- BUILD MAIN UI
 -- ============================================
 function BroomHackUI:_buildUI()
     self.screenGui = create("ScreenGui", {
-        Name          = "BroomHackSkinChanger",
-        ResetOnSpawn  = false,
-        ZIndexBehavior= Enum.ZIndexBehavior.Sibling,
-        Parent        = player:WaitForChild("PlayerGui"),
+        Name = "BroomHackCosmeticChanger", ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        Parent = player:WaitForChild("PlayerGui"),
     })
 
-    local W = (CELL_SIZE * COLUMNS) + (CELL_PADDING * (COLUMNS + 1)) + (WINDOW_PADDING * 2)
-    local H = 500
-
+    -- Main frame
     self.mainFrame = create("Frame", {
-        Name             = "MainFrame",
-        Size             = UDim2.new(0, W, 0, H),
-        Position         = UDim2.new(0.5, -W/2, 0.5, -H/2),
-        BackgroundColor3 = Theme.Background,
-        BorderSizePixel  = 0,
-        Parent           = self.screenGui,
+        Name = "Main", Size = UDim2.new(0, TOTAL_WIDTH, 0, TOTAL_HEIGHT),
+        Position = UDim2.new(0.5, -TOTAL_WIDTH/2, 0.5, -TOTAL_HEIGHT/2),
+        BackgroundColor3 = Theme.Background, BorderSizePixel = 0,
+        Parent = self.screenGui,
     })
-    create("UICorner",  { CornerRadius = UDim.new(0,4), Parent = self.mainFrame })
-    create("UIStroke",  {
-        Color = Theme.PastelPurple, Thickness = 1, Transparency = 0.3,
+    create("UICorner", { CornerRadius = UDim.new(0,6), Parent = self.mainFrame })
+    create("UIStroke", {
+        Color = Theme.Stroke, Thickness = 1,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = self.mainFrame,
     })
 
-    -- Top bar
+    -- ── TOP BAR ──
     self.topBar = create("Frame", {
-        Size             = UDim2.new(1,0,0,TOP_BAR_HEIGHT),
-        BackgroundColor3 = Theme.TopBar,
-        BorderSizePixel  = 0,
-        Parent           = self.mainFrame,
-    })
-    create("UICorner", { CornerRadius = UDim.new(0,4), Parent = self.topBar })
-    create("Frame", {
-        Size = UDim2.new(1,0,0,6), Position = UDim2.new(0,0,1,-6),
-        BackgroundColor3 = Theme.TopBar, BorderSizePixel = 0, Parent = self.topBar,
-    })
-
-    self._dateStr = getRealDate()
-
-    local pr,pg,pb = purpleRGB()
-    local tr,tg,tb = topbarRGB()
-    local sr,sg,sb = subRGB()
-
-    self.titleLabel = create("TextLabel", {
-        Size               = UDim2.new(1,-16,1,0),
-        Position           = UDim2.new(0,10,0,0),
-        BackgroundTransparency = 1,
-        RichText           = true,
-        Text               = string.format(
-            '<font color="rgb(%d,%d,%d)">Broom</font>'..
-            '<font color="rgb(%d,%d,%d)">Hack Skinchanger</font>'..
-            '<font color="rgb(%d,%d,%d)"> ~ %s</font>',
-            pr,pg,pb, tr,tg,tb, sr,sg,sb, self._dateStr
-        ),
-        TextColor3         = Theme.TopBarText,
-        TextSize           = 13,
-        Font               = Enum.Font.Code,
-        TextXAlignment     = Enum.TextXAlignment.Left,
-        Parent             = self.topBar,
-    })
-
-    -- Accent line
-    create("Frame", {
-        Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,0,TOP_BAR_HEIGHT),
-        BackgroundColor3 = Theme.PastelPurple, BackgroundTransparency = 0.5,
+        Size = UDim2.new(1,0,0,TOP_BAR_H), BackgroundColor3 = Theme.TopBar,
         BorderSizePixel = 0, Parent = self.mainFrame,
     })
-
-    -- Back hint
-    self.backIndicator = create("TextLabel", {
-        Size               = UDim2.new(0,210,0,TOP_BAR_HEIGHT),
-        Position           = UDim2.new(1,-215,0,0),
-        BackgroundTransparency = 1,
-        RichText           = true,
-        Text               = string.format(
-            '<font color="rgb(%d,%d,%d)">[Right Click → back]</font>', pr,pg,pb
-        ),
-        TextSize           = 11,
-        Font               = Enum.Font.Code,
-        TextXAlignment     = Enum.TextXAlignment.Right,
-        Visible            = false,
-        Parent             = self.topBar,
+    create("UICorner", { CornerRadius = UDim.new(0,6), Parent = self.topBar })
+    create("Frame", { -- cover bottom corners
+        Size = UDim2.new(1,0,0,8), Position = UDim2.new(0,0,1,-8),
+        BackgroundColor3 = Theme.TopBar, BorderSizePixel = 0, Parent = self.topBar,
     })
-
-    -- Scrolling grid
-    self.scrollFrame = create("ScrollingFrame", {
-        Size                = UDim2.new(1,-WINDOW_PADDING*2, 1, -(TOP_BAR_HEIGHT+2+WINDOW_PADDING)),
-        Position            = UDim2.new(0, WINDOW_PADDING, 0, TOP_BAR_HEIGHT+2),
-        BackgroundTransparency = 1,
-        BorderSizePixel     = 0,
-        ScrollBarThickness  = 4,
-        ScrollBarImageColor3= Theme.ScrollBar,
-        CanvasSize          = UDim2.new(0,0,0,0),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
-        ScrollingDirection  = Enum.ScrollingDirection.Y,
-        Parent              = self.mainFrame,
+    create("TextLabel", {
+        Size = UDim2.new(1,-16,1,0), Position = UDim2.new(0,10,0,0),
+        BackgroundTransparency = 1, Text = "Cosmetic Changer",
+        TextColor3 = Theme.LabelText, TextSize = 13, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = self.topBar,
     })
-    self.gridLayout = create("UIGridLayout", {
-        CellSize            = UDim2.new(0,CELL_SIZE, 0,CELL_SIZE+LABEL_HEIGHT),
-        CellPadding         = UDim2.new(0,CELL_PADDING,0,CELL_PADDING),
-        SortOrder           = Enum.SortOrder.LayoutOrder,
-        FillDirection       = Enum.FillDirection.Horizontal,
-        HorizontalAlignment = Enum.HorizontalAlignment.Center,
-        FillDirectionMaxCells = COLUMNS,
-        Parent              = self.scrollFrame,
+    self.keybindLabel = create("TextLabel", {
+        Size = UDim2.new(0,100,1,0), Position = UDim2.new(1,-106,0,0),
+        BackgroundTransparency = 1, Text = "[RightShift]",
+        TextColor3 = Theme.SubText, TextSize = 11, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Right, Parent = self.topBar,
     })
-    create("UIPadding", {
-        PaddingTop   = UDim.new(0,CELL_PADDING),
-        PaddingLeft  = UDim.new(0,CELL_PADDING),
-        PaddingRight = UDim.new(0,CELL_PADDING),
-        Parent       = self.scrollFrame,
+    -- Accent line under topbar
+    create("Frame", {
+        Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,0,TOP_BAR_H),
+        BackgroundColor3 = Theme.Accent, BackgroundTransparency = 0.6,
+        BorderSizePixel = 0, Parent = self.mainFrame,
     })
 
     makeDraggable(self.mainFrame, self.topBar)
 
-    -- Right-click goes back — works even over buttons
+    -- ── CONTENT AREA (below topbar) ──
+    local contentY = TOP_BAR_H + 1
+    local contentH = TOTAL_HEIGHT - contentY
+
+    -- ── LEFT PANEL (weapons) ──
+    self.leftPanel = create("Frame", {
+        Size = UDim2.new(0, LEFT_WIDTH, 0, contentH),
+        Position = UDim2.new(0, 0, 0, contentY),
+        BackgroundColor3 = Theme.Panel, BorderSizePixel = 0,
+        Parent = self.mainFrame,
+    })
+
+    -- Left header: "weapon filter"
+    create("TextLabel", {
+        Size = UDim2.new(1,-8,0,FILTER_H), Position = UDim2.new(0,6,0,2),
+        BackgroundTransparency = 1, Text = "weapon filter",
+        TextColor3 = Theme.SubText, TextSize = 11, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = self.leftPanel,
+    })
+
+    -- Left search bar
+    local leftSearchFrame = create("Frame", {
+        Size = UDim2.new(1,-10,0,SEARCH_H),
+        Position = UDim2.new(0,5,0, FILTER_H + 2),
+        BackgroundColor3 = Theme.SearchBg, BorderSizePixel = 0,
+        Parent = self.leftPanel,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0,4), Parent = leftSearchFrame })
+    create("UIStroke", {
+        Color = Theme.SearchBorder, Thickness = 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = leftSearchFrame,
+    })
+    self.weaponSearchBox = create("TextBox", {
+        Size = UDim2.new(1,-10,1,0), Position = UDim2.new(0,5,0,0),
+        BackgroundTransparency = 1, PlaceholderText = "filter weapons...",
+        PlaceholderColor3 = Theme.SubText, Text = "",
+        TextColor3 = Theme.SearchText, TextSize = 11, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+        Parent = leftSearchFrame,
+    })
+    self.weaponSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        self._weaponSearch = self.weaponSearchBox.Text:lower()
+        self:_filterWeapons()
+    end)
+
+    -- Left scroll
+    local leftScrollY = FILTER_H + 2 + SEARCH_H + 4
+    self.weaponScroll = create("ScrollingFrame", {
+        Size = UDim2.new(1,-4, 1, -leftScrollY - 2),
+        Position = UDim2.new(0, 2, 0, leftScrollY),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+        ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.ScrollBar,
+        CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        Parent = self.leftPanel,
+    })
+    self.weaponGrid = create("UIGridLayout", {
+        CellSize = UDim2.new(0, LEFT_CELL, 0, LEFT_CELL + LABEL_H),
+        CellPadding = UDim2.new(0, CELL_PAD, 0, CELL_PAD),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        FillDirectionMaxCells = LEFT_COLS,
+        Parent = self.weaponScroll,
+    })
+    create("UIPadding", {
+        PaddingTop = UDim.new(0, CELL_PAD), PaddingLeft = UDim.new(0, CELL_PAD),
+        PaddingRight = UDim.new(0, CELL_PAD), Parent = self.weaponScroll,
+    })
+
+    -- ── DIVIDER ──
+    create("Frame", {
+        Size = UDim2.new(0, DIVIDER_W, 0, contentH),
+        Position = UDim2.new(0, LEFT_WIDTH, 0, contentY),
+        BackgroundColor3 = Theme.Divider, BorderSizePixel = 0,
+        Parent = self.mainFrame,
+    })
+
+    -- ── RIGHT PANEL (cosmetics) ──
+    local rightX = LEFT_WIDTH + DIVIDER_W
+    local rightW = TOTAL_WIDTH - rightX
+
+    self.rightPanel = create("Frame", {
+        Size = UDim2.new(0, rightW, 0, contentH),
+        Position = UDim2.new(0, rightX, 0, contentY),
+        BackgroundColor3 = Theme.Panel, BorderSizePixel = 0,
+        ClipsDescendants = true,
+        Parent = self.mainFrame,
+    })
+
+    -- Right header: "cosmetic filter"
+    create("TextLabel", {
+        Size = UDim2.new(1,-8,0,FILTER_H), Position = UDim2.new(0,6,0,2),
+        BackgroundTransparency = 1, Text = "cosmetic filter",
+        TextColor3 = Theme.SubText, TextSize = 11, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Left, Parent = self.rightPanel,
+    })
+
+    -- Right search bar
+    local rightSearchFrame = create("Frame", {
+        Size = UDim2.new(1,-10,0,SEARCH_H),
+        Position = UDim2.new(0,5,0, FILTER_H + 2),
+        BackgroundColor3 = Theme.SearchBg, BorderSizePixel = 0,
+        Parent = self.rightPanel,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0,4), Parent = rightSearchFrame })
+    create("UIStroke", {
+        Color = Theme.SearchBorder, Thickness = 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = rightSearchFrame,
+    })
+    self.cosmeticSearchBox = create("TextBox", {
+        Size = UDim2.new(1,-10,1,0), Position = UDim2.new(0,5,0,0),
+        BackgroundTransparency = 1, PlaceholderText = "filter cosmetics...",
+        PlaceholderColor3 = Theme.SubText, Text = "",
+        TextColor3 = Theme.SearchText, TextSize = 11, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Left, ClearTextOnFocus = false,
+        Parent = rightSearchFrame,
+    })
+    self.cosmeticSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+        self._cosmeticSearch = self.cosmeticSearchBox.Text:lower()
+        self:_filterCosmetics()
+    end)
+
+    -- ── TAB ROW (skin / wrap / charm) ──
+    local tabY = FILTER_H + 2 + SEARCH_H + 4
+    self.tabRow = create("Frame", {
+        Size = UDim2.new(1,-10,0,TAB_ROW_H),
+        Position = UDim2.new(0,5,0,tabY),
+        BackgroundTransparency = 1, Parent = self.rightPanel,
+    })
+
+    local tabs = {"skin", "wrap", "charm"}
+    local tabWidth = 55
+    self._tabButtons = {}
+    for idx, tabName in ipairs(tabs) do
+        local tabBtn = create("TextButton", {
+            Size = UDim2.new(0, tabWidth, 0, TAB_ROW_H - 4),
+            Position = UDim2.new(0, (idx-1) * (tabWidth + 4), 0, 2),
+            BackgroundColor3 = tabName == self.activeTab and Theme.TabActive or Theme.TabInactive,
+            BorderSizePixel = 0, Text = tabName,
+            TextColor3 = tabName == self.activeTab and Theme.TabTextActive or Theme.TabTextInactive,
+            TextSize = 11, Font = Enum.Font.Code,
+            Parent = self.tabRow,
+        })
+        create("UICorner", { CornerRadius = UDim.new(0,4), Parent = tabBtn })
+        self._tabButtons[tabName] = tabBtn
+
+        tabBtn.MouseButton1Click:Connect(function()
+            self:_switchTab(tabName)
+        end)
+    end
+
+    -- ── RIGHT SCROLL (cosmetics grid) ──
+    local rightScrollY = tabY + TAB_ROW_H + 4
+    self.cosmeticScroll = create("ScrollingFrame", {
+        Size = UDim2.new(1,-4, 1, -rightScrollY - BOTTOM_BAR_H - 2),
+        Position = UDim2.new(0, 2, 0, rightScrollY),
+        BackgroundTransparency = 1, BorderSizePixel = 0,
+        ScrollBarThickness = 3, ScrollBarImageColor3 = Theme.ScrollBar,
+        CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        Parent = self.rightPanel,
+    })
+    self.cosmeticGrid = create("UIGridLayout", {
+        CellSize = UDim2.new(0, RIGHT_CELL, 0, RIGHT_CELL + LABEL_H),
+        CellPadding = UDim2.new(0, CELL_PAD, 0, CELL_PAD),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        FillDirectionMaxCells = RIGHT_COLS,
+        Parent = self.cosmeticScroll,
+    })
+    create("UIPadding", {
+        PaddingTop = UDim.new(0, CELL_PAD), PaddingLeft = UDim.new(0, CELL_PAD),
+        PaddingRight = UDim.new(0, CELL_PAD), Parent = self.cosmeticScroll,
+    })
+
+    -- ── BOTTOM BAR ──
+    self.bottomBar = create("Frame", {
+        Size = UDim2.new(0, rightW, 0, BOTTOM_BAR_H),
+        Position = UDim2.new(0, rightX, 1, -BOTTOM_BAR_H),
+        BackgroundColor3 = Theme.Panel, BorderSizePixel = 0,
+        Parent = self.mainFrame,
+    })
+    -- Divider line above bottom bar
+    create("Frame", {
+        Size = UDim2.new(1,0,0,1), Position = UDim2.new(0,0,0,0),
+        BackgroundColor3 = Theme.Divider, BorderSizePixel = 0,
+        Parent = self.bottomBar,
+    })
+
+    -- "apply selected to all" button
+    self.applyAllBtn = create("TextButton", {
+        Size = UDim2.new(1,-16,0,24),
+        Position = UDim2.new(0,8,0,5),
+        BackgroundColor3 = Theme.ButtonBg, BorderSizePixel = 0,
+        Text = "apply selected to all", TextColor3 = Theme.LabelText,
+        TextSize = 11, Font = Enum.Font.Code,
+        Parent = self.bottomBar,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0,4), Parent = self.applyAllBtn })
+    create("UIStroke", {
+        Color = Theme.ButtonBorder, Thickness = 1, Transparency = 0.4,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = self.applyAllBtn,
+    })
+    self.applyAllBtn.MouseButton1Click:Connect(function()
+        self:_applyToAll()
+    end)
+
+    -- Hint text
+    create("TextLabel", {
+        Size = UDim2.new(1,-8,0,14),
+        Position = UDim2.new(0,4,0,32),
+        BackgroundTransparency = 1,
+        Text = "right click weapon to remove skin",
+        TextColor3 = Theme.SubText, TextSize = 10, Font = Enum.Font.Code,
+        Parent = self.bottomBar,
+    })
+
+    -- "No weapon selected" label for right panel
+    self.noWeaponLabel = create("TextLabel", {
+        Size = UDim2.new(1,0,0,30),
+        Position = UDim2.new(0,0,0.4,0),
+        BackgroundTransparency = 1,
+        Text = "select a weapon on the left",
+        TextColor3 = Theme.SubText, TextSize = 12, Font = Enum.Font.Code,
+        Visible = true, Parent = self.rightPanel,
+    })
+
+    -- ── RIGHT-CLICK on weapon = remove skin ──
     UserInputService.InputBegan:Connect(function(input, processed)
         if input.UserInputType == Enum.UserInputType.MouseButton2 then
+            -- Check if over left panel
             local mousePos = UserInputService:GetMouseLocation()
-            local frameAbsPos  = self.mainFrame.AbsolutePosition
-            local frameAbsSize = self.mainFrame.AbsoluteSize
-
-            local isOverUI = self.mainFrame.Visible
-                and mousePos.X >= frameAbsPos.X
-                and mousePos.X <= frameAbsPos.X + frameAbsSize.X
-                and mousePos.Y >= frameAbsPos.Y
-                and mousePos.Y <= frameAbsPos.Y + frameAbsSize.Y
-
-            if not isOverUI then return end
-
-            if self.currentView == "wraps" then
-                self:_showSkins(self.currentWeapon)
-            elseif self.currentView == "skins" then
-                self:_showWeapons()
+            local lpAbs = self.leftPanel.AbsolutePosition
+            local lpSz  = self.leftPanel.AbsoluteSize
+            if self.mainFrame.Visible
+                and mousePos.X >= lpAbs.X and mousePos.X <= lpAbs.X + lpSz.X
+                and mousePos.Y >= lpAbs.Y and mousePos.Y <= lpAbs.Y + lpSz.Y then
+                -- Find which weapon cell was right-clicked
+                for _, wData in ipairs(self.weapons) do
+                    if wData._cell then
+                        local cAbs = wData._cell.AbsolutePosition
+                        local cSz  = wData._cell.AbsoluteSize
+                        if mousePos.X >= cAbs.X and mousePos.X <= cAbs.X + cSz.X
+                            and mousePos.Y >= cAbs.Y and mousePos.Y <= cAbs.Y + cSz.Y then
+                            -- Remove equipped cosmetic based on active tab
+                            if self.activeTab == "skin" then
+                                self.equippedSkins[wData.Name] = nil
+                                if wData._skinDot then wData._skinDot.Visible = false end
+                                -- Fire callback with nil
+                                for _, sk in ipairs(wData.Skins or {}) do
+                                    if sk.Callback then
+                                        pcall(function() sk.Callback(wData.Name, nil) end)
+                                        break
+                                    end
+                                end
+                            elseif self.activeTab == "wrap" then
+                                self.equippedWraps[wData.Name] = nil
+                                if wData._wrapDot then wData._wrapDot.Visible = false end
+                                if wData.WrapCallback then
+                                    pcall(function() wData.WrapCallback(wData.Name, nil) end)
+                                end
+                            elseif self.activeTab == "charm" then
+                                self.equippedCharms[wData.Name] = nil
+                                if wData._charmDot then wData._charmDot.Visible = false end
+                                if wData.CharmCallback then
+                                    pcall(function() wData.CharmCallback(wData.Name, nil) end)
+                                end
+                            end
+                            self:_refreshWeaponCell(wData)
+                            if self.selectedWeapon == wData then
+                                self:_renderCosmetics()
+                            end
+                            break
+                        end
+                    end
+                end
             end
         end
     end)
 end
 
 -- ============================================
--- TITLE HELPERS
+-- TAB SWITCHING
 -- ============================================
-function BroomHackUI:_setTitle(suffix, suffixColor)
-    local pr,pg,pb = purpleRGB()
-    local tr,tg,tb = topbarRGB()
-    local cr,cg,cb
-    if suffixColor then
-        cr = math.floor(suffixColor.R*255)
-        cg = math.floor(suffixColor.G*255)
-        cb = math.floor(suffixColor.B*255)
-    else
-        cr,cg,cb = subRGB()
+function BroomHackUI:_switchTab(tabName)
+    self.activeTab = tabName
+    for name, btn in pairs(self._tabButtons) do
+        if name == tabName then
+            TweenService:Create(btn, TweenInfo.new(0.15), {
+                BackgroundColor3 = Theme.TabActive, TextColor3 = Theme.TabTextActive
+            }):Play()
+        else
+            TweenService:Create(btn, TweenInfo.new(0.15), {
+                BackgroundColor3 = Theme.TabInactive, TextColor3 = Theme.TabTextInactive
+            }):Play()
+        end
     end
-    self.titleLabel.Text = string.format(
-        '<font color="rgb(%d,%d,%d)">Broom</font>'..
-        '<font color="rgb(%d,%d,%d)">Hack Skinchanger</font>'..
-        '<font color="rgb(%d,%d,%d)"> ~ %s</font>',
-        pr,pg,pb, tr,tg,tb, cr,cg,cb, suffix
-    )
-end
-
--- ============================================
--- CLEAR GRID (with optional scroll preserve)
--- ============================================
-function BroomHackUI:_clearGrid(preserveScroll)
-    local savedScroll = nil
-    if preserveScroll then
-        savedScroll = self.scrollFrame.CanvasPosition
-    end
-
-    self:_clearViewports()
-
-    for _, c in ipairs(self.scrollFrame:GetChildren()) do
-        if c:IsA("Frame") then c:Destroy() end
-    end
-
-    if preserveScroll and savedScroll then
-        task.defer(function()
-            self.scrollFrame.CanvasPosition = savedScroll
-        end)
-    else
-        self.scrollFrame.CanvasPosition = Vector2.new(0, 0)
-    end
-end
-
--- ============================================
--- CREATE PREVIEW: either ViewportFrame (3D) or ImageLabel (2D)
--- Returns the preview element
--- ============================================
-function BroomHackUI:_createPreview(parent, data)
-    -- data can have .Model (Instance) and/or .Image (string)
-    -- Prefer Model if available
-    if data.Model then
-        local vp, clone, cam, center, dist = createViewport(
-            parent,
-            data.Model,
-            UDim2.new(0, IMAGE_SIZE, 0, IMAGE_SIZE),
-            UDim2.new(0.5, -IMAGE_SIZE/2, 0, 5)
-        )
-        self:_registerViewport(cam, center, dist)
-        return vp
-    elseif data.Image and data.Image ~= "" then
-        return create("ImageLabel", {
-            Size = UDim2.new(0, IMAGE_SIZE, 0, IMAGE_SIZE),
-            Position = UDim2.new(0.5, -IMAGE_SIZE/2, 0, 5),
-            BackgroundTransparency = 1,
-            Image = data.Image,
-            ScaleType = Enum.ScaleType.Fit,
-            Parent = parent,
-        })
-    else
-        -- Empty placeholder
-        local placeholder = create("Frame", {
-            Size = UDim2.new(0, IMAGE_SIZE, 0, IMAGE_SIZE),
-            Position = UDim2.new(0.5, -IMAGE_SIZE/2, 0, 5),
-            BackgroundColor3 = Theme.ViewportBG,
-            BorderSizePixel = 0,
-            Parent = parent,
-        })
-        create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = placeholder })
-        create("TextLabel", {
-            Size = UDim2.new(1,0,1,0),
-            BackgroundTransparency = 1,
-            Text = "?",
-            TextColor3 = Theme.SubText,
-            TextSize = 28,
-            Font = Enum.Font.GothamBold,
-            Parent = placeholder,
-        })
-        return placeholder
-    end
+    self:_renderCosmetics()
 end
 
 -- ============================================
 -- ADD WEAPON (public API)
---
--- cfg = {
---     Name        = "AK-47",
---     Image       = "rbxassetid://...",   -- flat icon for weapon grid (optional)
---     Model       = someModelInstance,     -- 3D model for weapon grid (optional, preferred)
---     LayoutOrder = 1,
---     Skins = {
---         { Name = "Dragon Lore", Model = ..., Image = "...", Callback = function(w,s) end },
---     },
---     Wraps = {
---         { Name = "Gold",   Model = ... },
---         { Name = "Carbon", Model = ... },
---         "PlainStringWrap",               -- still supported, shows placeholder
---     },
---     WrapCallback = function(weaponName, wrapName) end,
--- }
 -- ============================================
 function BroomHackUI:AddWeapon(cfg)
-    -- Normalize wraps: strings become tables with just a Name
+    -- Normalize wraps
     local normalizedWraps = {}
     for _, w in ipairs(cfg.Wraps or {}) do
         if type(w) == "string" then
@@ -545,297 +653,377 @@ function BroomHackUI:AddWeapon(cfg)
             table.insert(normalizedWraps, w)
         end
     end
+    -- Normalize charms
+    local normalizedCharms = {}
+    for _, c in ipairs(cfg.Charms or {}) do
+        if type(c) == "string" then
+            table.insert(normalizedCharms, { Name = c })
+        else
+            table.insert(normalizedCharms, c)
+        end
+    end
 
     local weapon = {
-        Name        = cfg.Name        or "Unknown",
-        Image       = cfg.Image       or "",
-        Model       = cfg.Model       or nil,
-        LayoutOrder = cfg.LayoutOrder or (#self.weapons + 1),
-        Skins       = cfg.Skins       or {},
-        Wraps       = normalizedWraps,
-        WrapCallback= cfg.WrapCallback,
-        _cell       = nil,
-        _dot        = nil,
+        Name         = cfg.Name or "Unknown",
+        Image        = cfg.Image or "",
+        Model        = cfg.Model or nil,
+        LayoutOrder  = cfg.LayoutOrder or (#self.weapons + 1),
+        Skins        = cfg.Skins or {},
+        Wraps        = normalizedWraps,
+        Charms       = normalizedCharms,
+        WrapCallback = cfg.WrapCallback,
+        CharmCallback= cfg.CharmCallback,
+        _cell        = nil,
+        _skinDot     = nil,
+        _wrapDot     = nil,
+        _charmDot    = nil,
     }
     table.insert(self.weapons, weapon)
+    self._weaponsByName[weapon.Name] = weapon
     self:_createWeaponCell(weapon)
 end
 
 -- ============================================
--- WEAPON CELL
+-- WEAPON CELL (left panel)
 -- ============================================
 function BroomHackUI:_createWeaponCell(weapon)
+    local isSelected = (self.selectedWeapon == weapon)
+
     local cell = create("Frame", {
-        Name             = "W_"..weapon.Name,
-        BackgroundColor3 = Theme.CellBackground,
-        BorderSizePixel  = 0,
-        LayoutOrder      = weapon.LayoutOrder,
-        Parent           = self.scrollFrame,
+        Name = "W_" .. weapon.Name,
+        BackgroundColor3 = isSelected and Theme.CellSelected or Theme.CellBg,
+        BorderSizePixel = 0, LayoutOrder = weapon.LayoutOrder,
+        Parent = self.weaponScroll,
     })
     create("UICorner", { CornerRadius = UDim.new(0,3), Parent = cell })
     local stroke = create("UIStroke", {
-        Color = Theme.PastelPurple, Thickness = 1, Transparency = 0.7,
+        Color = isSelected and Theme.Accent or Theme.Stroke,
+        Thickness = 1, Transparency = isSelected and 0.2 or 0.6,
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = cell,
     })
 
-    -- Use 3D preview or flat image
-    self:_createPreview(cell, { Model = weapon.Model, Image = weapon.Image })
+    -- Preview
+    self:_createPreview(cell, { Model = weapon.Model, Image = weapon.Image },
+        IMG_SIZE_SMALL, UDim2.new(0.5, -IMG_SIZE_SMALL/2, 0, 3))
 
+    -- Name label
     create("TextLabel", {
-        Size = UDim2.new(1,-6,0,LABEL_HEIGHT),
-        Position = UDim2.new(0,3,1,-LABEL_HEIGHT-2),
-        BackgroundTransparency = 1,
-        Text = weapon.Name, TextColor3 = Theme.LabelText,
-        TextSize = 11, Font = Enum.Font.Code,
-        TextXAlignment = Enum.TextXAlignment.Left,
+        Size = UDim2.new(1,-4,0,LABEL_H),
+        Position = UDim2.new(0,2,1,-LABEL_H-1),
+        BackgroundTransparency = 1, Text = weapon.Name,
+        TextColor3 = isSelected and Theme.Accent or Theme.LabelText,
+        TextSize = 9, Font = Enum.Font.Code,
+        TextXAlignment = Enum.TextXAlignment.Center,
         TextTruncate = Enum.TextTruncate.AtEnd,
         Parent = cell,
     })
 
+    -- Equipped dots
     local skinDot = create("Frame", {
-        Size = UDim2.new(0,6,0,6), Position = UDim2.new(1,-10,0,4),
-        BackgroundColor3 = Theme.PastelPurple,
+        Size = UDim2.new(0,5,0,5), Position = UDim2.new(1,-8,0,3),
+        BackgroundColor3 = Theme.Accent,
         Visible = self.equippedSkins[weapon.Name] ~= nil, Parent = cell,
     })
     create("UICorner", { CornerRadius = UDim.new(1,0), Parent = skinDot })
 
     local wrapDot = create("Frame", {
-        Size = UDim2.new(0,6,0,6), Position = UDim2.new(1,-10,0,14),
-        BackgroundColor3 = Theme.WrapSelected,
+        Size = UDim2.new(0,5,0,5), Position = UDim2.new(1,-8,0,11),
+        BackgroundColor3 = Color3.fromRGB(230, 180, 80),
         Visible = self.equippedWraps[weapon.Name] ~= nil, Parent = cell,
     })
     create("UICorner", { CornerRadius = UDim.new(1,0), Parent = wrapDot })
 
-    weapon._cell    = cell
-    weapon._dot     = skinDot
-    weapon._wrapDot = wrapDot
+    local charmDot = create("Frame", {
+        Size = UDim2.new(0,5,0,5), Position = UDim2.new(1,-8,0,19),
+        BackgroundColor3 = Color3.fromRGB(80, 200, 80),
+        Visible = self.equippedCharms[weapon.Name] ~= nil, Parent = cell,
+    })
+    create("UICorner", { CornerRadius = UDim.new(1,0), Parent = charmDot })
 
+    weapon._cell     = cell
+    weapon._skinDot  = skinDot
+    weapon._wrapDot  = wrapDot
+    weapon._charmDot = charmDot
+    weapon._stroke   = stroke
+
+    -- Click handler
     local btn = create("TextButton", {
         Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "",
         Parent = cell,
     })
     btn.MouseEnter:Connect(function()
-        TweenService:Create(cell,  TweenInfo.new(0.15), { BackgroundColor3 = Theme.CellHover }):Play()
-        TweenService:Create(stroke,TweenInfo.new(0.15), { Transparency = 0.3 }):Play()
+        if self.selectedWeapon ~= weapon then
+            TweenService:Create(cell, TweenInfo.new(0.12), { BackgroundColor3 = Theme.CellHover }):Play()
+        end
     end)
     btn.MouseLeave:Connect(function()
-        TweenService:Create(cell,  TweenInfo.new(0.15), { BackgroundColor3 = Theme.CellBackground }):Play()
-        TweenService:Create(stroke,TweenInfo.new(0.15), { Transparency = 0.7 }):Play()
+        if self.selectedWeapon ~= weapon then
+            TweenService:Create(cell, TweenInfo.new(0.12), { BackgroundColor3 = Theme.CellBg }):Play()
+        end
     end)
     btn.MouseButton1Click:Connect(function()
-        self.currentWeapon = weapon
-        self:_showSkins(weapon)
+        self:_selectWeapon(weapon)
     end)
 end
 
 -- ============================================
--- SKINS VIEW
+-- REFRESH WEAPON CELL (update dots/selection)
 -- ============================================
-function BroomHackUI:_showSkins(weapon)
-    self.currentView   = "skins"
-    self.currentWeapon = weapon
-    self.backIndicator.Visible = true
-    self:_setTitle(weapon.Name, Theme.PastelPurple)
-    self:_clearGrid()
-
-    for i, skin in ipairs(weapon.Skins) do
-        local isEq = (self.equippedSkins[weapon.Name] == skin.Name)
-
-        local cell = create("Frame", {
-            Name             = "S_"..skin.Name,
-            BackgroundColor3 = isEq and Theme.CellSelected or Theme.CellBackground,
-            BorderSizePixel  = 0,
-            LayoutOrder      = i,
-            Parent           = self.scrollFrame,
-        })
-        create("UICorner", { CornerRadius = UDim.new(0,3), Parent = cell })
-        local stroke = create("UIStroke", {
-            Color = Theme.PastelPurple, Thickness = 1,
-            Transparency = isEq and 0.1 or 0.7,
-            ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = cell,
-        })
-
-        -- 3D or 2D preview
-        self:_createPreview(cell, { Model = skin.Model, Image = skin.Image })
-
-        create("TextLabel", {
-            Size = UDim2.new(1,-6,0,LABEL_HEIGHT),
-            Position = UDim2.new(0,3,1,-LABEL_HEIGHT-2),
-            BackgroundTransparency = 1,
-            Text = skin.Name,
-            TextColor3 = isEq and Theme.PastelPurple or Theme.LabelText,
-            TextSize = 11, Font = Enum.Font.Code,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            Parent = cell,
-        })
-        if isEq then
-            create("TextLabel", {
-                Size = UDim2.new(0,16,0,16), Position = UDim2.new(1,-18,0,2),
-                BackgroundTransparency = 1, Text = "✓",
-                TextColor3 = Theme.PastelPurple, TextSize = 14,
-                Font = Enum.Font.GothamBold, Parent = cell,
-            })
+function BroomHackUI:_refreshWeaponCell(weapon)
+    if not weapon._cell then return end
+    local isSelected = (self.selectedWeapon == weapon)
+    weapon._cell.BackgroundColor3 = isSelected and Theme.CellSelected or Theme.CellBg
+    if weapon._stroke then
+        weapon._stroke.Color = isSelected and Theme.Accent or Theme.Stroke
+        weapon._stroke.Transparency = isSelected and 0.2 or 0.6
+    end
+    -- Update label color
+    for _, child in ipairs(weapon._cell:GetChildren()) do
+        if child:IsA("TextLabel") then
+            child.TextColor3 = isSelected and Theme.Accent or Theme.LabelText
         end
-
-        local btn = create("TextButton", {
-            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "",
-            Parent = cell,
-        })
-        btn.MouseEnter:Connect(function()
-            if self.equippedSkins[weapon.Name] ~= skin.Name then
-                TweenService:Create(cell,  TweenInfo.new(0.15), { BackgroundColor3 = Theme.CellHover }):Play()
-                TweenService:Create(stroke,TweenInfo.new(0.15), { Transparency = 0.3 }):Play()
-            end
-        end)
-        btn.MouseLeave:Connect(function()
-            if self.equippedSkins[weapon.Name] ~= skin.Name then
-                TweenService:Create(cell,  TweenInfo.new(0.15), { BackgroundColor3 = Theme.CellBackground }):Play()
-                TweenService:Create(stroke,TweenInfo.new(0.15), { Transparency = 0.7 }):Play()
-            end
-        end)
-
-        btn.MouseButton1Click:Connect(function()
-            self.equippedSkins[weapon.Name] = skin.Name
-            if weapon._dot then weapon._dot.Visible = true end
-            if skin.Callback then
-                skin.Callback(weapon.Name, skin.Name)
-            end
-            self.currentSkin = skin
-            self:_showWraps(weapon)
-        end)
+    end
+    if weapon._skinDot then
+        weapon._skinDot.Visible = self.equippedSkins[weapon.Name] ~= nil
+    end
+    if weapon._wrapDot then
+        weapon._wrapDot.Visible = self.equippedWraps[weapon.Name] ~= nil
+    end
+    if weapon._charmDot then
+        weapon._charmDot.Visible = self.equippedCharms[weapon.Name] ~= nil
     end
 end
 
 -- ============================================
--- WRAPS VIEW
+-- SELECT WEAPON
 -- ============================================
-function BroomHackUI:_showWraps(weapon, preserveScroll)
-    self.currentView   = "wraps"
-    self.currentWeapon = weapon
-    self.backIndicator.Visible = true
-    self:_setTitle(weapon.Name .. "  ›  Wrap", Theme.WrapSelected)
-    self:_clearGrid(preserveScroll)
+function BroomHackUI:_selectWeapon(weapon)
+    local prev = self.selectedWeapon
+    self.selectedWeapon = weapon
 
-    -- Build list with "None" first
-    local allWraps = {{ Name = "None" }}
-    for _, w in ipairs(weapon.Wraps or {}) do
-        table.insert(allWraps, w)
-    end
+    if prev then self:_refreshWeaponCell(prev) end
+    self:_refreshWeaponCell(weapon)
 
-    for i, wrap in ipairs(allWraps) do
-        local wrapName = wrap.Name
-        local isEq = (self.equippedWraps[weapon.Name] == wrapName)
-            or (wrapName == "None" and not self.equippedWraps[weapon.Name])
+    self.noWeaponLabel.Visible = false
+    self:_renderCosmetics()
+end
 
-        local cell = create("Frame", {
-            Name             = "Wrap_"..wrapName,
-            BackgroundColor3 = isEq and Color3.fromRGB(55,50,30) or Theme.CellBackground,
-            BorderSizePixel  = 0,
-            LayoutOrder      = i,
-            Parent           = self.scrollFrame,
-        })
-        create("UICorner", { CornerRadius = UDim.new(0,3), Parent = cell })
-        local stroke = create("UIStroke", {
-            Color = Theme.WrapSelected, Thickness = 1,
-            Transparency = isEq and 0.1 or 0.75,
-            ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = cell,
-        })
-
-        -- 3D model preview or fallback placeholder
-        if wrap.Model then
-            self:_createPreview(cell, { Model = wrap.Model })
-        else
-            -- Placeholder icon block (like before)
-            local iconFrame = create("Frame", {
-                Size = UDim2.new(0,IMAGE_SIZE,0,IMAGE_SIZE),
-                Position = UDim2.new(0.5,-IMAGE_SIZE/2,0,5),
-                BackgroundColor3 = isEq
-                    and Color3.fromRGB(200,160,50)
-                    or Color3.fromRGB(55,55,65),
-                BorderSizePixel = 0,
-                Parent = cell,
-            })
-            create("UICorner", { CornerRadius = UDim.new(0,4), Parent = iconFrame })
-            create("TextLabel", {
-                Size = UDim2.new(1,0,1,0),
-                BackgroundTransparency = 1,
-                Text = wrapName == "None" and "✕" or "◈",
-                TextColor3 = isEq and Color3.fromRGB(255,220,80) or Theme.SubText,
-                TextSize = 28, Font = Enum.Font.GothamBold,
-                Parent = iconFrame,
-            })
-        end
-
-        create("TextLabel", {
-            Size = UDim2.new(1,-6,0,LABEL_HEIGHT),
-            Position = UDim2.new(0,3,1,-LABEL_HEIGHT-2),
-            BackgroundTransparency = 1,
-            Text = wrapName,
-            TextColor3 = isEq and Theme.WrapSelected or Theme.LabelText,
-            TextSize = 11, Font = Enum.Font.Code,
-            TextXAlignment = Enum.TextXAlignment.Left,
-            TextTruncate = Enum.TextTruncate.AtEnd,
-            Parent = cell,
-        })
-        if isEq then
-            create("TextLabel", {
-                Size = UDim2.new(0,16,0,16), Position = UDim2.new(1,-18,0,2),
-                BackgroundTransparency = 1, Text = "✓",
-                TextColor3 = Theme.WrapSelected, TextSize = 14,
-                Font = Enum.Font.GothamBold, Parent = cell,
-            })
-        end
-
-        local btn = create("TextButton", {
-            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "",
-            Parent = cell,
-        })
-        btn.MouseEnter:Connect(function()
-            if not isEq then
-                TweenService:Create(cell,  TweenInfo.new(0.15), { BackgroundColor3 = Theme.CellHover }):Play()
-                TweenService:Create(stroke,TweenInfo.new(0.15), { Transparency = 0.3 }):Play()
-            end
-        end)
-        btn.MouseLeave:Connect(function()
-            if not isEq then
-                TweenService:Create(cell,  TweenInfo.new(0.15), { BackgroundColor3 = Theme.CellBackground }):Play()
-                TweenService:Create(stroke,TweenInfo.new(0.15), { Transparency = 0.75 }):Play()
-            end
-        end)
-
-        btn.MouseButton1Click:Connect(function()
-            if wrapName == "None" then
-                self.equippedWraps[weapon.Name] = nil
-                if weapon._wrapDot then weapon._wrapDot.Visible = false end
+-- ============================================
+-- FILTER WEAPONS (search)
+-- ============================================
+function BroomHackUI:_filterWeapons()
+    local q = self._weaponSearch
+    for _, w in ipairs(self.weapons) do
+        if w._cell then
+            if q == "" or w.Name:lower():find(q, 1, true) then
+                w._cell.Visible = true
             else
-                self.equippedWraps[weapon.Name] = wrapName
-                if weapon._wrapDot then weapon._wrapDot.Visible = true end
+                w._cell.Visible = false
             end
-
-            if weapon.WrapCallback then
-                weapon.WrapCallback(weapon.Name, wrapName == "None" and nil or wrapName)
-            end
-
-            -- Preserve scroll when re-rendering
-            self:_showWraps(weapon, true)
-        end)
+        end
     end
 end
 
 -- ============================================
--- WEAPONS VIEW
+-- FILTER COSMETICS (search)
 -- ============================================
-function BroomHackUI:_showWeapons()
-    self.currentView   = "weapons"
-    self.currentWeapon = nil
-    self.currentSkin   = nil
-    self.backIndicator.Visible = false
-    self:_setTitle(self._dateStr, nil)
-    self:_clearGrid()
+function BroomHackUI:_filterCosmetics()
+    local q = self._cosmeticSearch
+    for _, entry in ipairs(self._cosmeticCells) do
+        if entry.cell then
+            if q == "" or entry.name:lower():find(q, 1, true) then
+                entry.cell.Visible = true
+            else
+                entry.cell.Visible = false
+            end
+        end
+    end
+end
 
-    for _, weapon in ipairs(self.weapons) do
-        self:_createWeaponCell(weapon)
+-- ============================================
+-- RENDER COSMETICS (right panel grid)
+-- ============================================
+function BroomHackUI:_renderCosmetics()
+    -- Clear existing
+    self:_clearViewports()
+    self._cosmeticCells = {}
+    for _, c in ipairs(self.cosmeticScroll:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+    self.cosmeticScroll.CanvasPosition = Vector2.new(0, 0)
+
+    local weapon = self.selectedWeapon
+    if not weapon then
+        self.noWeaponLabel.Visible = true
+        return
+    end
+    self.noWeaponLabel.Visible = false
+
+    local items = {}
+    local equippedMap, equipCallback
+
+    if self.activeTab == "skin" then
+        items = weapon.Skins or {}
+        equippedMap = self.equippedSkins
+    elseif self.activeTab == "wrap" then
+        items = weapon.Wraps or {}
+        equippedMap = self.equippedWraps
+    elseif self.activeTab == "charm" then
+        items = weapon.Charms or {}
+        equippedMap = self.equippedCharms
+    end
+
+    for i, item in ipairs(items) do
+        local itemName = item.Name or item
+        local isEq = (equippedMap[weapon.Name] == itemName)
+
+        local cell = create("Frame", {
+            Name = "C_" .. itemName,
+            BackgroundColor3 = isEq and Theme.CellEquipped or Theme.CellBg,
+            BorderSizePixel = 0, LayoutOrder = i,
+            Parent = self.cosmeticScroll,
+        })
+        create("UICorner", { CornerRadius = UDim.new(0,3), Parent = cell })
+        local stroke = create("UIStroke", {
+            Color = isEq and Theme.EquipDot or Theme.Stroke,
+            Thickness = 1, Transparency = isEq and 0.2 or 0.6,
+            ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = cell,
+        })
+
+        -- Preview
+        self:_createPreview(cell, { Model = item.Model, Image = item.Image },
+            IMG_SIZE_BIG, UDim2.new(0.5, -IMG_SIZE_BIG/2, 0, 3))
+
+        -- Label
+        create("TextLabel", {
+            Size = UDim2.new(1,-4,0,LABEL_H),
+            Position = UDim2.new(0,2,1,-LABEL_H-1),
+            BackgroundTransparency = 1, Text = itemName,
+            TextColor3 = isEq and Theme.EquipDot or Theme.LabelText,
+            TextSize = 10, Font = Enum.Font.Code,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            Parent = cell,
+        })
+
+        if isEq then
+            create("TextLabel", {
+                Size = UDim2.new(0,14,0,14), Position = UDim2.new(1,-16,0,2),
+                BackgroundTransparency = 1, Text = "✓",
+                TextColor3 = Theme.EquipDot, TextSize = 12,
+                Font = Enum.Font.GothamBold, Parent = cell,
+            })
+        end
+
+        table.insert(self._cosmeticCells, { cell = cell, name = itemName })
+
+        -- Click
+        local btn = create("TextButton", {
+            Size = UDim2.new(1,0,1,0), BackgroundTransparency = 1, Text = "",
+            Parent = cell,
+        })
+        btn.MouseEnter:Connect(function()
+            if equippedMap[weapon.Name] ~= itemName then
+                TweenService:Create(cell, TweenInfo.new(0.12), { BackgroundColor3 = Theme.CellHover }):Play()
+                TweenService:Create(stroke, TweenInfo.new(0.12), { Transparency = 0.3 }):Play()
+            end
+        end)
+        btn.MouseLeave:Connect(function()
+            if equippedMap[weapon.Name] ~= itemName then
+                TweenService:Create(cell, TweenInfo.new(0.12), { BackgroundColor3 = Theme.CellBg }):Play()
+                TweenService:Create(stroke, TweenInfo.new(0.12), { Transparency = 0.6 }):Play()
+            end
+        end)
+
+        btn.MouseButton1Click:Connect(function()
+            self:_equipCosmetic(weapon, itemName, item)
+        end)
+    end
+
+    -- Apply search filter
+    if self._cosmeticSearch ~= "" then
+        self:_filterCosmetics()
+    end
+end
+
+-- ============================================
+-- EQUIP COSMETIC
+-- ============================================
+function BroomHackUI:_equipCosmetic(weapon, itemName, item)
+    if self.activeTab == "skin" then
+        self.equippedSkins[weapon.Name] = itemName
+        if weapon._skinDot then weapon._skinDot.Visible = true end
+        if item.Callback then
+            pcall(function() item.Callback(weapon.Name, itemName) end)
+        end
+
+    elseif self.activeTab == "wrap" then
+        self.equippedWraps[weapon.Name] = itemName
+        if weapon._wrapDot then weapon._wrapDot.Visible = true end
+        if weapon.WrapCallback then
+            pcall(function() weapon.WrapCallback(weapon.Name, itemName) end)
+        end
+
+    elseif self.activeTab == "charm" then
+        self.equippedCharms[weapon.Name] = itemName
+        if weapon._charmDot then weapon._charmDot.Visible = true end
+        if weapon.CharmCallback then
+            pcall(function() weapon.CharmCallback(weapon.Name, itemName) end)
+        end
+    end
+
+    self:_refreshWeaponCell(weapon)
+    self:_renderCosmetics()
+end
+
+-- ============================================
+-- APPLY TO ALL
+-- ============================================
+function BroomHackUI:_applyToAll()
+    if not self.selectedWeapon then return end
+    local wName = self.selectedWeapon.Name
+
+    if self.activeTab == "skin" then
+        local skinName = self.equippedSkins[wName]
+        if not skinName then return end
+        for _, w in ipairs(self.weapons) do
+            -- Check if this weapon has a skin with that name
+            for _, sk in ipairs(w.Skins or {}) do
+                if sk.Name == skinName then
+                    self.equippedSkins[w.Name] = skinName
+                    if w._skinDot then w._skinDot.Visible = true end
+                    if sk.Callback then
+                        pcall(function() sk.Callback(w.Name, skinName) end)
+                    end
+                    break
+                end
+            end
+            self:_refreshWeaponCell(w)
+        end
+
+    elseif self.activeTab == "wrap" then
+        local wrapName = self.equippedWraps[wName]
+        if not wrapName then return end
+        for _, w in ipairs(self.weapons) do
+            self.equippedWraps[w.Name] = wrapName
+            if w._wrapDot then w._wrapDot.Visible = true end
+            if w.WrapCallback then
+                pcall(function() w.WrapCallback(w.Name, wrapName) end)
+            end
+            self:_refreshWeaponCell(w)
+        end
+
+    elseif self.activeTab == "charm" then
+        local charmName = self.equippedCharms[wName]
+        if not charmName then return end
+        for _, w in ipairs(self.weapons) do
+            self.equippedCharms[w.Name] = charmName
+            if w._charmDot then w._charmDot.Visible = true end
+            if w.CharmCallback then
+                pcall(function() w.CharmCallback(w.Name, charmName) end)
+            end
+            self:_refreshWeaponCell(w)
+        end
     end
 end
 
@@ -843,6 +1031,7 @@ end
 -- PUBLIC API
 -- ============================================
 function BroomHackUI:SetKeybind(keyCode)
+    self.keybindLabel.Text = "[" .. keyCode.Name .. "]"
     UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
         if input.KeyCode == keyCode then
@@ -853,11 +1042,14 @@ end
 
 function BroomHackUI:SetEquipped(weaponName, skinName)
     self.equippedSkins[weaponName] = skinName
-    for _, w in ipairs(self.weapons) do
-        if w.Name == weaponName and w._dot then
-            w._dot.Visible = true
-        end
-    end
+    local w = self._weaponsByName[weaponName]
+    if w then self:_refreshWeaponCell(w) end
+end
+
+function BroomHackUI:SetEquippedWrap(weaponName, wrapName)
+    self.equippedWraps[weaponName] = wrapName
+    local w = self._weaponsByName[weaponName]
+    if w then self:_refreshWeaponCell(w) end
 end
 
 function BroomHackUI:Toggle() self.mainFrame.Visible = not self.mainFrame.Visible end
