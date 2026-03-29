@@ -2,6 +2,25 @@
     BroomHack Skin Changer UI Library
     Flow: Weapons → Skins → Wraps (opens automatically after skin select)
     Right click always goes back one level
+    
+    NOW WITH LIVE 3D VIEWPORT PREVIEWS for skins & wraps
+    
+    Usage for skins:
+        Skins = {
+            { Name = "Dragon Lore", Model = game.ReplicatedStorage.Skins.DragonLore, Callback = function(...) end },
+            -- OR still use Image if you want a flat icon fallback:
+            { Name = "Vanilla", Image = "rbxassetid://123456", Callback = function(...) end },
+        }
+    
+    Usage for wraps:
+        Wraps = {
+            { Name = "Gold",    Model = game.ReplicatedStorage.Wraps.Gold },
+            { Name = "Carbon",  Model = game.ReplicatedStorage.Wraps.Carbon },
+            -- Or just strings like before for placeholder icons:
+            "SimpleWrapName",
+        }
+    
+    WrapCallback = function(weaponName, wrapName) end
 ]]
 
 local BroomHackUI = {}
@@ -10,6 +29,7 @@ BroomHackUI.__index = BroomHackUI
 local Players          = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService     = game:GetService("TweenService")
+local RunService       = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 
@@ -29,6 +49,7 @@ local Theme = {
     ScrollBar     = Color3.fromRGB(60, 60, 70),
     WrapSelected  = Color3.fromRGB(230, 180, 80),
     WrapPurple    = Color3.fromRGB(186, 156, 230),
+    ViewportBG    = Color3.fromRGB(32, 32, 40),
 }
 
 local COLUMNS        = 4
@@ -38,6 +59,10 @@ local TOP_BAR_HEIGHT = 30
 local IMAGE_SIZE     = 70
 local LABEL_HEIGHT   = 18
 local WINDOW_PADDING = 8
+
+-- Viewport camera settings
+local CAMERA_FOV     = 50
+local ROTATE_SPEED   = 30  -- degrees per second
 
 -- ============================================
 -- HELPERS
@@ -101,6 +126,105 @@ local function subRGB()
 end
 
 -- ============================================
+-- GET BOUNDING BOX OF A MODEL
+-- ============================================
+local function getModelBounds(model)
+    local minVec = Vector3.new(math.huge, math.huge, math.huge)
+    local maxVec = Vector3.new(-math.huge, -math.huge, -math.huge)
+
+    local parts = {}
+    if model:IsA("BasePart") then
+        table.insert(parts, model)
+    end
+    for _, desc in ipairs(model:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            table.insert(parts, desc)
+        end
+    end
+
+    if #parts == 0 then
+        return Vector3.zero, Vector3.zero, Vector3.zero
+    end
+
+    for _, part in ipairs(parts) do
+        local cf = part.CFrame
+        local size = part.Size
+        -- 8 corners of the bounding box
+        for _, offset in ipairs({
+            Vector3.new(-1,-1,-1), Vector3.new(-1,-1, 1),
+            Vector3.new(-1, 1,-1), Vector3.new(-1, 1, 1),
+            Vector3.new( 1,-1,-1), Vector3.new( 1,-1, 1),
+            Vector3.new( 1, 1,-1), Vector3.new( 1, 1, 1),
+        }) do
+            local corner = cf:PointToWorldSpace(size * 0.5 * offset)
+            minVec = Vector3.new(
+                math.min(minVec.X, corner.X),
+                math.min(minVec.Y, corner.Y),
+                math.min(minVec.Z, corner.Z)
+            )
+            maxVec = Vector3.new(
+                math.max(maxVec.X, corner.X),
+                math.max(maxVec.Y, corner.Y),
+                math.max(maxVec.Z, corner.Z)
+            )
+        end
+    end
+
+    local center = (minVec + maxVec) * 0.5
+    local extents = maxVec - minVec
+    return center, extents, minVec
+end
+
+-- ============================================
+-- CREATE A VIEWPORT WITH A CLONED MODEL
+-- Sets up camera to frame the model and stores
+-- rotation data for the spin loop
+-- ============================================
+local function createViewport(parent, model, size, position)
+    local viewport = create("ViewportFrame", {
+        Size = size or UDim2.new(0, IMAGE_SIZE, 0, IMAGE_SIZE),
+        Position = position or UDim2.new(0.5, -IMAGE_SIZE/2, 0, 5),
+        BackgroundColor3 = Theme.ViewportBG,
+        BackgroundTransparency = 0.5,
+        BorderSizePixel = 0,
+        Parent = parent,
+    })
+    create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = viewport })
+
+    -- Ambient + light so the model is visible
+    local ambient = Color3.fromRGB(180, 170, 200)
+    viewport.Ambient = ambient
+    viewport.LightColor = Color3.fromRGB(255, 255, 255)
+    viewport.LightDirection = Vector3.new(-1, -1, -1).Unit
+
+    -- Clone the model into the viewport
+    local clone = model:Clone()
+    clone.Parent = viewport
+
+    -- Make sure all parts are anchored
+    if clone:IsA("BasePart") then clone.Anchored = true end
+    for _, desc in ipairs(clone:GetDescendants()) do
+        if desc:IsA("BasePart") then desc.Anchored = true end
+    end
+
+    -- Calculate camera position to frame the model
+    local center, extents = getModelBounds(clone)
+    local maxExtent = math.max(extents.X, extents.Y, extents.Z, 0.1)
+
+    -- Distance so the model fills the viewport nicely
+    local fovRad = math.rad(CAMERA_FOV)
+    local dist = (maxExtent * 0.5) / math.tan(fovRad * 0.5) * 1.3
+
+    local cam = Instance.new("Camera")
+    cam.FieldOfView = CAMERA_FOV
+    cam.CFrame = CFrame.new(center + Vector3.new(0, maxExtent * 0.15, dist), center)
+    cam.Parent = viewport
+    viewport.CurrentCamera = cam
+
+    return viewport, clone, cam, center, dist
+end
+
+-- ============================================
 -- CONSTRUCTOR
 -- ============================================
 function BroomHackUI.new()
@@ -112,8 +236,47 @@ function BroomHackUI.new()
     self.equippedSkins  = {}
     self.equippedWraps  = {}
     self._wrapCallback  = nil
+
+    -- Track all active viewports for rotation
+    -- Each entry: { camera, center, distance, angle }
+    self._activeViewports = {}
+    self._spinConnection  = nil
+
     self:_buildUI()
+    self:_startSpinLoop()
     return self
+end
+
+-- ============================================
+-- SPIN LOOP — rotates all active viewport cameras
+-- ============================================
+function BroomHackUI:_startSpinLoop()
+    if self._spinConnection then return end
+    self._spinConnection = RunService.RenderStepped:Connect(function(dt)
+        for _, vp in ipairs(self._activeViewports) do
+            vp.angle = vp.angle + ROTATE_SPEED * dt
+            local rad = math.rad(vp.angle)
+            local offset = Vector3.new(
+                math.sin(rad) * vp.distance,
+                vp.distance * 0.2,
+                math.cos(rad) * vp.distance
+            )
+            vp.camera.CFrame = CFrame.new(vp.center + offset, vp.center)
+        end
+    end)
+end
+
+function BroomHackUI:_clearViewports()
+    self._activeViewports = {}
+end
+
+function BroomHackUI:_registerViewport(camera, center, distance)
+    table.insert(self._activeViewports, {
+        camera   = camera,
+        center   = center,
+        distance = distance,
+        angle    = 0,
+    })
 end
 
 -- ============================================
@@ -235,13 +398,9 @@ function BroomHackUI:_buildUI()
 
     makeDraggable(self.mainFrame, self.topBar)
 
-    -- =============================================
-    -- FIX 1: Right-click handler — ignore "processed"
-    --        so it works even when clicking over buttons
-    -- =============================================
+    -- Right-click goes back — works even over buttons
     UserInputService.InputBegan:Connect(function(input, processed)
         if input.UserInputType == Enum.UserInputType.MouseButton2 then
-            -- Check if the mouse is actually over our UI
             local mousePos = UserInputService:GetMouseLocation()
             local frameAbsPos  = self.mainFrame.AbsolutePosition
             local frameAbsSize = self.mainFrame.AbsoluteSize
@@ -286,8 +445,7 @@ function BroomHackUI:_setTitle(suffix, suffixColor)
 end
 
 -- ============================================
--- CLEAR GRID
--- FIX 2: Optional flag to preserve scroll position
+-- CLEAR GRID (with optional scroll preserve)
 -- ============================================
 function BroomHackUI:_clearGrid(preserveScroll)
     local savedScroll = nil
@@ -295,12 +453,13 @@ function BroomHackUI:_clearGrid(preserveScroll)
         savedScroll = self.scrollFrame.CanvasPosition
     end
 
+    self:_clearViewports()
+
     for _, c in ipairs(self.scrollFrame:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
 
     if preserveScroll and savedScroll then
-        -- Defer restoring scroll so the grid has time to rebuild
         task.defer(function()
             self.scrollFrame.CanvasPosition = savedScroll
         end)
@@ -310,15 +469,90 @@ function BroomHackUI:_clearGrid(preserveScroll)
 end
 
 -- ============================================
+-- CREATE PREVIEW: either ViewportFrame (3D) or ImageLabel (2D)
+-- Returns the preview element
+-- ============================================
+function BroomHackUI:_createPreview(parent, data)
+    -- data can have .Model (Instance) and/or .Image (string)
+    -- Prefer Model if available
+    if data.Model then
+        local vp, clone, cam, center, dist = createViewport(
+            parent,
+            data.Model,
+            UDim2.new(0, IMAGE_SIZE, 0, IMAGE_SIZE),
+            UDim2.new(0.5, -IMAGE_SIZE/2, 0, 5)
+        )
+        self:_registerViewport(cam, center, dist)
+        return vp
+    elseif data.Image and data.Image ~= "" then
+        return create("ImageLabel", {
+            Size = UDim2.new(0, IMAGE_SIZE, 0, IMAGE_SIZE),
+            Position = UDim2.new(0.5, -IMAGE_SIZE/2, 0, 5),
+            BackgroundTransparency = 1,
+            Image = data.Image,
+            ScaleType = Enum.ScaleType.Fit,
+            Parent = parent,
+        })
+    else
+        -- Empty placeholder
+        local placeholder = create("Frame", {
+            Size = UDim2.new(0, IMAGE_SIZE, 0, IMAGE_SIZE),
+            Position = UDim2.new(0.5, -IMAGE_SIZE/2, 0, 5),
+            BackgroundColor3 = Theme.ViewportBG,
+            BorderSizePixel = 0,
+            Parent = parent,
+        })
+        create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = placeholder })
+        create("TextLabel", {
+            Size = UDim2.new(1,0,1,0),
+            BackgroundTransparency = 1,
+            Text = "?",
+            TextColor3 = Theme.SubText,
+            TextSize = 28,
+            Font = Enum.Font.GothamBold,
+            Parent = placeholder,
+        })
+        return placeholder
+    end
+end
+
+-- ============================================
 -- ADD WEAPON (public API)
+--
+-- cfg = {
+--     Name        = "AK-47",
+--     Image       = "rbxassetid://...",   -- flat icon for weapon grid (optional)
+--     Model       = someModelInstance,     -- 3D model for weapon grid (optional, preferred)
+--     LayoutOrder = 1,
+--     Skins = {
+--         { Name = "Dragon Lore", Model = ..., Image = "...", Callback = function(w,s) end },
+--     },
+--     Wraps = {
+--         { Name = "Gold",   Model = ... },
+--         { Name = "Carbon", Model = ... },
+--         "PlainStringWrap",               -- still supported, shows placeholder
+--     },
+--     WrapCallback = function(weaponName, wrapName) end,
+-- }
 -- ============================================
 function BroomHackUI:AddWeapon(cfg)
+    -- Normalize wraps: strings become tables with just a Name
+    local normalizedWraps = {}
+    for _, w in ipairs(cfg.Wraps or {}) do
+        if type(w) == "string" then
+            table.insert(normalizedWraps, { Name = w })
+        else
+            table.insert(normalizedWraps, w)
+        end
+    end
+
     local weapon = {
         Name        = cfg.Name        or "Unknown",
         Image       = cfg.Image       or "",
+        Model       = cfg.Model       or nil,
         LayoutOrder = cfg.LayoutOrder or (#self.weapons + 1),
         Skins       = cfg.Skins       or {},
-        Wraps       = cfg.Wraps       or {},
+        Wraps       = normalizedWraps,
         WrapCallback= cfg.WrapCallback,
         _cell       = nil,
         _dot        = nil,
@@ -344,13 +578,9 @@ function BroomHackUI:_createWeaponCell(weapon)
         ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = cell,
     })
 
-    create("ImageLabel", {
-        Size = UDim2.new(0,IMAGE_SIZE,0,IMAGE_SIZE),
-        Position = UDim2.new(0.5,-IMAGE_SIZE/2,0,5),
-        BackgroundTransparency = 1,
-        Image = weapon.Image, ScaleType = Enum.ScaleType.Fit,
-        Parent = cell,
-    })
+    -- Use 3D preview or flat image
+    self:_createPreview(cell, { Model = weapon.Model, Image = weapon.Image })
+
     create("TextLabel", {
         Size = UDim2.new(1,-6,0,LABEL_HEIGHT),
         Position = UDim2.new(0,3,1,-LABEL_HEIGHT-2),
@@ -425,13 +655,9 @@ function BroomHackUI:_showSkins(weapon)
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = cell,
         })
 
-        create("ImageLabel", {
-            Size = UDim2.new(0,IMAGE_SIZE,0,IMAGE_SIZE),
-            Position = UDim2.new(0.5,-IMAGE_SIZE/2,0,5),
-            BackgroundTransparency = 1,
-            Image = skin.Image or "", ScaleType = Enum.ScaleType.Fit,
-            Parent = cell,
-        })
+        -- 3D or 2D preview
+        self:_createPreview(cell, { Model = skin.Model, Image = skin.Image })
+
         create("TextLabel", {
             Size = UDim2.new(1,-6,0,LABEL_HEIGHT),
             Position = UDim2.new(0,3,1,-LABEL_HEIGHT-2),
@@ -491,12 +717,14 @@ function BroomHackUI:_showWraps(weapon, preserveScroll)
     self:_setTitle(weapon.Name .. "  ›  Wrap", Theme.WrapSelected)
     self:_clearGrid(preserveScroll)
 
-    local allWraps = {"None"}
+    -- Build list with "None" first
+    local allWraps = {{ Name = "None" }}
     for _, w in ipairs(weapon.Wraps or {}) do
         table.insert(allWraps, w)
     end
 
-    for i, wrapName in ipairs(allWraps) do
+    for i, wrap in ipairs(allWraps) do
+        local wrapName = wrap.Name
         local isEq = (self.equippedWraps[weapon.Name] == wrapName)
             or (wrapName == "None" and not self.equippedWraps[weapon.Name])
 
@@ -514,24 +742,30 @@ function BroomHackUI:_showWraps(weapon, preserveScroll)
             ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = cell,
         })
 
-        local iconFrame = create("Frame", {
-            Size = UDim2.new(0,IMAGE_SIZE,0,IMAGE_SIZE),
-            Position = UDim2.new(0.5,-IMAGE_SIZE/2,0,5),
-            BackgroundColor3 = isEq
-                and Color3.fromRGB(200,160,50)
-                or Color3.fromRGB(55,55,65),
-            BorderSizePixel = 0,
-            Parent = cell,
-        })
-        create("UICorner", { CornerRadius = UDim.new(0,4), Parent = iconFrame })
-        create("TextLabel", {
-            Size = UDim2.new(1,0,1,0),
-            BackgroundTransparency = 1,
-            Text = wrapName == "None" and "✕" or "◈",
-            TextColor3 = isEq and Color3.fromRGB(255,220,80) or Theme.SubText,
-            TextSize = 28, Font = Enum.Font.GothamBold,
-            Parent = iconFrame,
-        })
+        -- 3D model preview or fallback placeholder
+        if wrap.Model then
+            self:_createPreview(cell, { Model = wrap.Model })
+        else
+            -- Placeholder icon block (like before)
+            local iconFrame = create("Frame", {
+                Size = UDim2.new(0,IMAGE_SIZE,0,IMAGE_SIZE),
+                Position = UDim2.new(0.5,-IMAGE_SIZE/2,0,5),
+                BackgroundColor3 = isEq
+                    and Color3.fromRGB(200,160,50)
+                    or Color3.fromRGB(55,55,65),
+                BorderSizePixel = 0,
+                Parent = cell,
+            })
+            create("UICorner", { CornerRadius = UDim.new(0,4), Parent = iconFrame })
+            create("TextLabel", {
+                Size = UDim2.new(1,0,1,0),
+                BackgroundTransparency = 1,
+                Text = wrapName == "None" and "✕" or "◈",
+                TextColor3 = isEq and Color3.fromRGB(255,220,80) or Theme.SubText,
+                TextSize = 28, Font = Enum.Font.GothamBold,
+                Parent = iconFrame,
+            })
+        end
 
         create("TextLabel", {
             Size = UDim2.new(1,-6,0,LABEL_HEIGHT),
@@ -583,7 +817,7 @@ function BroomHackUI:_showWraps(weapon, preserveScroll)
                 weapon.WrapCallback(weapon.Name, wrapName == "None" and nil or wrapName)
             end
 
-            -- FIX 2: Preserve scroll position when re-rendering after wrap selection
+            -- Preserve scroll when re-rendering
             self:_showWraps(weapon, true)
         end)
     end
@@ -629,6 +863,13 @@ end
 function BroomHackUI:Toggle() self.mainFrame.Visible = not self.mainFrame.Visible end
 function BroomHackUI:Show()   self.mainFrame.Visible = true  end
 function BroomHackUI:Hide()   self.mainFrame.Visible = false end
-function BroomHackUI:Destroy() self.screenGui:Destroy() end
+function BroomHackUI:Destroy()
+    if self._spinConnection then
+        self._spinConnection:Disconnect()
+        self._spinConnection = nil
+    end
+    self:_clearViewports()
+    self.screenGui:Destroy()
+end
 
 return BroomHackUI
